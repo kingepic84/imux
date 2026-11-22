@@ -1,0 +1,23 @@
+[package]
+name = "imux"
+version = "0.1.0"
+edition = "2024"
+authors = ["kingepic84 <imux@kingepic84.page>"]
+license = "GPL-3.0-or-later"
+
+[dependencies]
+image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif"] }
+libc = "0.2"
+miniz_oxide = "0.8.9"
+mio = { version = "1.2.4", features = ["os-poll", "os-ext", "net"] }
+nix = { version = "0.31.3", features = ["term", "process", "signal", "fs", "ioctl", "poll", "user"] }
+clap = { version = "4", default-features = false, features = ["std", "help", "usage", "error-context", "suggestions"] }
+regex-lite = "0.1.9"
+unicode-width = "0.2.3"
+vte = "0.15.0"
+
+[profile.release]
+lto = true
+opt-level = 3
+panic = "unwind"
+overflow-checks = true

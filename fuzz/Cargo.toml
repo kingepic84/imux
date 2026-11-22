@@ -1,0 +1,106 @@
+[package]
+name = "imux-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+imux = { path = ".." }
+
+[workspace]
+
+
+[[bin]]
+name = "term_feed"
+path = "fuzz_targets/term_feed.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "frame_decode"
+path = "fuzz_targets/frame_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "snapshot_decode"
+path = "fuzz_targets/snapshot_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "format_expand"
+path = "fuzz_targets/format_expand.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "status_parse"
+path = "fuzz_targets/status_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "config_line"
+path = "fuzz_targets/config_line.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "key_parse"
+path = "fuzz_targets/key_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "image_decode"
+path = "fuzz_targets/image_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "sixel_decode"
+path = "fuzz_targets/sixel_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "base64_decode"
+path = "fuzz_targets/base64_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "iterm_parse"
+path = "fuzz_targets/iterm_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "kitty_graphics"
+path = "fuzz_targets/kitty_graphics.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "term_deferred"
+path = "fuzz_targets/term_deferred.rs"
+test = false
+doc = false
+bench = false

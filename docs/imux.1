@@ -1,0 +1,5652 @@
+.\" imux(1) manual page. Keep it in step with the code.
+.TH IMUX 1 "November 21, 2026" "imux" "User Commands"
+.SH NAME
+imux \- terminal multiplexer with images in the scrollback
+.SH SYNOPSIS
+.B imux
+.RB [ \-L
+.I name
+|
+.B \-S
+.IR path ]
+.RI [ command
+.RI [ flags ]]
+.PP
+.B \-L
+and
+.B \-S
+choose the server a command talks to, and starts if it is not running.
+A
+.I name
+of up to 32 of
+.BR A\-Za\-z0\-9._\- ,
+not starting with a dot, gives the socket
+.I $TMPDIR/imux\-UID/name
+and the state directory
+.IR state/name .
+A
+.I path
+is the socket itself, in a directory that is yours with mode 0700, at most 100 bytes long.
+Without a flag,
+.B $IMUX_SOCKET_NAME
+(a name) is used, else the default server.
+A flag wins over the variable, and
+.B \-S
+over
+.BR \-L .
+A server started with a flag passes its choice on to its panes, so
+.B imux
+in a pane talks to that pane's own server.
+Two named servers share nothing: not the socket, the log
+.RI ( server\-name.log ),
+the autosave nor the snapshots.
+.PP
+Without a command
+.B imux
+attaches to the server, starting it if needed.
+The commands and their flags are described under
+.BR COMMANDS ;
+those that belong to a feature are described with it, under
+.BR WORKTREES ,
+.BR PERSISTENCE ,
+.BR "AGENT STATUS" ,
+.B EVENTS
+and
+.BR PLUGINS .
+.PP
+.B imux \-\-version
+(also
+.B \-V
+and
+.BR version )
+prints
+.B imux
+and the version number and exits.
+It does not contact the server and starts none.
+.SH DESCRIPTION
+.B imux
+is a terminal multiplexer: it lets you create, use and control several terminals from one screen.
+A server owns all state and holds sessions; a session holds windows, a window holds panes, and
+every pane runs
+.B $SHELL
+as a login shell on a pseudo-terminal of its own.
+Clients attach from a terminal and can detach at any time without disturbing the programs inside.
+The server starts on demand and exits when the last pane of the last session exits.
+.PP
+Inline images (iTerm2, Kitty and Sixel) are part of the cell buffer and the scrollback, not drawn
+over them, so they survive scrolling, resizing and splitting (see
+.BR "TERMINAL SUPPORT" ).
+The default key bindings are listed under
+.BR "KEY BINDINGS" .
+.PP
+Windows are numbered from
+.B base\-index
+(0 by default) without gaps: closing one renumbers those after it.
+Any number of clients can attach at once; each shows the session it last switched to, and all see
+the same live state.
+Panes are sized to the smallest client looking at their session; a session nobody looks at keeps
+its last size, and one made with
+.B "new\-session \-d"
+starts at
+.B default\-size
+(80 by 24 unless set).
+A larger client shows the unused area as dim dots, and a client smaller than the window shows its
+top left part.
+.B window\-size
+changes which client decides (see
+.BR CONFIGURATION ).
+.PP
+.B "imux \-\-help"
+lists imux's own commands (the session commands, snapshots, worktrees,
+.BR agent ,
+.BR pane ,
+.BR events ,
+.BR plugin ,
+.BR doctor ,
+.BR check\-config )
+and the names of the commands the server runs.
+\fBimux \fIcommand\fB \-\-help\fR (also \fBimux agent wait \-\-help\fR) shows the flags of one of
+imux's own commands.
+A command line that does not fit prints the reason and that command's usage and exits 2; a failure
+while doing the work exits 1; an unknown command prints the whole usage and exits 2.
+A group without a sub-command (\fBimux pane\fR, \fBimux plugin\fR, \fBimux api\fR) prints its help
+and exits 2.
+.SH KEY BINDINGS
+Commands are issued with the prefix key, by default
+.BR C\-b ,
+followed by a command key.
+.B "C\-b C\-b"
+sends the prefix to the program in the active pane; a key not listed here is discarded.
+.B "set prefix2"
+makes a second key start a command like the prefix (off by default; set it to
+.B None
+to remove it), and
+.B "send\-prefix \-2"
+types it into the pane the way
+.B send\-prefix
+types the first.
+The prefix and the bindings below are defaults and can be changed in the configuration file (see
+.BR CONFIGURATION ).
+.PP
+Keys are decoded, not matched as bytes, so extended keys
+.RB ( "CSI u"
+and
+.BR modifyOtherKeys )
+work too.
+.B BTab
+is another name for
+.BR S\-Tab .
+An escape sequence split across reads is held for
+.B escape\-time
+(10 milliseconds), so that a lone Escape is told apart from the start of a sequence.
+Repeatable bindings (the arrow keys, alone and with Control or Alt) can be pressed again without
+the prefix within 500 milliseconds; any other key ends the repeat and goes to the pane.
+.PP
+.PD 0
+.TP 12
+.B d
+Detach the client.
+.TP
+.B c
+New window, its shell in the working directory of the active pane's foreground process.
+.TP
+.B &
+Kill the window.
+.TP
+.B n, p
+Next, previous window.
+.TP
+.B M\-n, M\-p
+Next, previous window with an alert (a
+.B #
+or
+.B !
+in its tab, see
+.BR monitor\-activity ).
+.TP
+.B 0 to 9
+Select the window with that number (counted from
+.BR base\-index ).
+.TP
+.B l, Tab
+Last (previously selected) window.
+.TP
+.B ,
+Rename the window.
+.TP
+.B %
+Split the pane side by side.
+.TP
+.B \(dq
+Split the pane, one above the other.
+The new pane inherits the working directory.
+.TP
+.B Up, Down, Left, Right
+Select the pane in that direction.
+.TP
+.B C\-Up, C\-Down, C\-Left, C\-Right
+Resize the pane by 1 cell.
+.TP
+.B M\-Up, M\-Down, M\-Left, M\-Right
+Resize the pane by 5 cells.
+.TP
+.B o
+Next pane.
+.TP
+.B ;
+Last (previously active) pane.
+.TP
+.B x
+Kill the pane.
+.TP
+.B z
+Zoom or unzoom the pane (see
+.BR resize\-pane\ \-Z ).
+.TP
+.B !
+Break the pane out into a window of its own.
+.TP
+.B {  }
+Swap the pane with the previous or next one.
+.TP
+.B C\-o, M\-o
+Rotate the panes to the previous or next place.
+.TP
+.B Space
+Next layout.
+.TP
+.B M\-1 to M\-7
+even\-horizontal, even\-vertical, main\-horizontal, main\-vertical, tiled, main\-horizontal\-mirrored,
+main\-vertical\-mirrored.
+.TP
+.B E
+Share the room out evenly again, keeping the layout.
+.TP
+.B q
+Show pane numbers for one second; a digit selects that pane, any other key dismisses them.
+Numbers start at
+.B pane\-base\-index
+(0) and follow the layout order.
+.TP
+.B [, PageUp
+Enter copy mode (see
+.BR "COPY MODE" ).
+.TP
+.B N
+New session, named with the lowest unused number.
+.TP
+.B (, )
+Previous, next session.
+.TP
+.B L
+Last session.
+.TP
+.B $
+Rename the session.
+.TP
+.B s
+Choose a session from a list.
+.TP
+.B w
+Choose a window from a list of sessions and windows.
+.TP
+.B f
+Find a window by name or screen text (see
+.BR find\-window ).
+.TP
+.B W
+Choose a repository, then name a worktree (see
+.BR WORKTREES ).
+.TP
+.B A
+Agent panel (see
+.BR "AGENT PANEL" ).
+.TP
+.B :
+Command prompt (see
+.BR COMMANDS ).
+.TP
+.B ?
+List the key bindings (see
+.BR list\-keys ).
+.TP
+.B ~
+Show the last messages (see
+.BR show\-messages ).
+.TP
+.B i
+Show the session, window, pane and the program in it.
+.TP
+.B r
+Redraw the screen.
+.TP
+.B D
+Choose a client from a list and detach it.
+.TP
+.B t
+Show a clock in the pane until a key is pressed.
+.TP
+.B m, M
+Mark the pane (on the marked pane: unmark); clear the mark.
+.TP
+.B C\-z
+Suspend the client and give the terminal back to the shell; continuing it redraws.
+.TP
+.B '
+Prompt for a window number and select it.
+.TP
+.B .
+Prompt for a number and move the window there.
+.TP
+.B ]
+Paste the newest buffer into the pane, bracketed if the program asked for it.
+.TP
+.B #
+List the paste buffers.
+.TP
+.B \-
+Delete the newest paste buffer.
+.TP
+.B =
+Choose a paste buffer and paste it.
+.PD
+.PP
+Personal preferences, such as another prefix or
+.B |
+and
+.B \-
+to split, belong in the configuration file:
+.PP
+.RS
+.nf
+set \-g prefix C\-a
+bind C\-a send\-prefix
+bind | split\-window \-h
+bind \- split\-window \-v
+bind h select\-pane \-L
+.fi
+.RE
+.SH WINDOWS AND PANES
+A window closes when its last pane exits and a session when its last window closes; clients of an
+ended session are switched to another.
+.PP
+A window is named after the foreground program of its active pane, re-evaluated about twice a
+second; renaming it with
+.B ,
+turns that off for the window.
+The
+.B ,
+and
+.B $
+commands read the new name on the status line: Enter accepts, Escape cancels, C\-u clears.
+An empty name, or a session name already in use, is refused.
+.SH CHOOSING SESSIONS AND WINDOWS
+The
+.B s
+and
+.B w
+commands display a list over the panes, with the entry the client currently shows marked by an
+asterisk.
+Keys do not reach the pane meanwhile.
+.PP
+.PD 0
+.TP 20
+.B Up, Down, k, j
+Move the selection.
+.TP
+.B PageUp, PageDown
+Move by ten entries.
+.TP
+.B Home, End, g, G
+Select the first or last entry.
+.TP
+.B Enter
+Switch to the selected session or window and close the list.
+.TP
+.B Escape, q
+Close the list.
+.PD
+.SH COPY MODE
+Copy mode shows a pane's scrollback with a cursor, using the vi or the emacs keys as
+.B mode\-keys
+says.
+Enter it with the prefix and
+.BR [ ,
+or by scrolling the wheel up over a pane whose program uses neither the mouse nor the alternate
+screen; scrolling back to the bottom then leaves it.
+The top right shows
+.RB [ lines\ from\ the\ bottom / lines\ of\ history ].
+.PP
+.BR copy\-mode " [" \-eHu "] [" \-t " \fIpane\fP]"
+(also from a key: \fBbind PageUp copy\-mode \-u\fP) enters it for any pane, not only the active one,
+and does not select that pane.
+.B \-u
+starts one page back,
+.B \-e
+leaves copy mode on scrolling back to the bottom, and
+.B \-H
+leaves out the position at the top right.
+.PP
+The vi keys:
+.PP
+.PD 0
+.TP 20
+.BR h\ j\ k\ l ,\ arrows
+Move the cursor.
+.TP
+.BR 0\ ^\ $
+Start of line, first non-blank, end of line.
+.TP
+.BR w\ b\ e ,\ W\ B\ E
+Move by word, or by space-separated word.
+.TP
+.BR g ,\ G
+Top and bottom of the history.
+.TP
+.BR H\ M\ L
+Top, middle and bottom of the view.
+.TP
+.BR C\-u\ C\-d ,\ C\-b\ C\-f
+Scroll by half a screen or a screen; PageUp and PageDown scroll a screen.
+.TP
+.BR C\-y\ C\-e
+Scroll by one line.
+.TP
+.BR /\ ? ,\ n\ N
+Search forward or backward, and repeat.
+A search with no capital letters ignores case; searches wrap around.
+.TP
+.BR v ,\ Space
+Start or clear a selection.
+.TP
+.B V
+Select whole lines.
+.TP
+.B C\-v
+Switch between a selection of running text and a block of columns (a rectangle: the same columns
+of every line, trailing blanks dropped); without a selection it starts a block.
+.TP
+.B o
+Move the cursor to the other end of the selection.
+.TP
+.BR y ,\ Enter
+Copy the selection and leave copy mode.
+.TP
+.B D
+Copy from the cursor to the end of the line and leave.
+.TP
+.BR Escape ,\ q ,\ C\-c
+Leave copy mode.
+.PD
+.PP
+The emacs keys:
+.PP
+.PD 0
+.TP 20
+.BR C\-b\ C\-f\ C\-p\ C\-n ,\ arrows
+Move the cursor.
+.TP
+.BR C\-a\ C\-e ,\ M\-m
+Start of line, end of line, first non-blank.
+.TP
+.BR M\-b ,\ M\-f
+Back a word, to the end of the next word.
+.TP
+.BR M\-<\ M\->
+Top and bottom of the history.
+.TP
+.B M\-r
+Middle of the view.
+.TP
+.BR M\-v ,\ C\-v
+Scroll a screen up or down (PageUp and PageDown too).
+.TP
+.BR M\-Up\ M\-Down ,\ C\-Up\ C\-Down
+Scroll by half a screen, or by one line.
+.TP
+.BR C\-s ,\ C\-r ,\ n\ N
+Search forward or backward, and repeat.
+.TP
+.B C\-Space
+Start a selection.
+.TP
+.B R
+Switch between running text and a block of columns.
+.TP
+.BR C\-w ,\ M\-w
+Copy the selection and leave copy mode.
+.TP
+.B C\-k
+Copy from the cursor to the end of the line and leave.
+.TP
+.BR Escape ,\ q ,\ C\-g
+Leave copy mode.
+.PD
+.PP
+.B list\-keys
+shows both tables as
+.BI "bind\-key \-T copy\-mode\-vi " "key " "send\-keys \-X " action \fR.
+The actions a binding can name:
+.PP
+.PD 0
+.TP 12
+.B leave
+.BR cancel ,
+.B copy\-selection\-and\-cancel
+(also spelled
+.BR copy\-pipe\-and\-cancel ,
+.B copy\-selection
+and
+.BR copy\-pipe ;
+a pipe command given with them is ignored, and the copy goes through
+.BR copy\-command ),
+.B copy\-end\-of\-line
+.TP
+.B selection
+.BR begin\-selection ,
+.B toggle\-selection
+(imux's
+.BR v ),
+.BR clear\-selection ,
+.BR select\-line ,
+.BR rectangle\-toggle ,
+.B other\-end
+.TP
+.B cursor
+.BR cursor\-left ,
+.BR cursor\-right ,
+.BR cursor\-up ,
+.BR cursor\-down ,
+.BR start\-of\-line ,
+.BR end\-of\-line ,
+.B back\-to\-indentation
+.TP
+.B words
+.BR next\-word ,
+.BR next\-space ,
+.BR previous\-word ,
+.BR previous\-space ,
+.BR next\-word\-end ,
+.B next\-space\-end
+.TP
+.B view
+.BR history\-top ,
+.BR history\-bottom ,
+.BR top\-line ,
+.BR middle\-line ,
+.BR bottom\-line ,
+.BR halfpage\-up ,
+.BR halfpage\-down ,
+.BR page\-up ,
+.BR page\-down ,
+.BR scroll\-up ,
+.B scroll\-down
+.TP
+.B search
+.BR search\-forward ,
+.BR search\-backward ,
+.BR search\-again ,
+.B search\-reverse
+.PD
+.PP
+A copy becomes the newest paste buffer, which
+.B ]
+types (see
+.BR "PASTE BUFFERS" ),
+and goes to the system clipboard.
+.PP
+With the mouse, dragging selects, and releasing the button copies and leaves copy mode.
+Holding the pointer at the top or bottom row keeps scrolling, faster the further it is outside the
+pane.
+A double click copies the word and a triple click the line; a double click on blank space copies
+nothing and ends copy mode.
+The middle button pastes the newest buffer.
+.SH PASTE BUFFERS
+Each copy becomes a new buffer named
+.BR buffer0 ,
+.BR buffer1 ,
+and so on, newest first; beyond
+.B buffer\-limit
+(default 50) of these automatic buffers, the oldest are dropped.
+Buffers made with
+.B set\-buffer \-b
+or
+.B load\-buffer \-b
+take a name of your choosing (at most 64 characters, no control characters), are exempt from the
+limit and are kept up to 100.
+A buffer holds at most 8 MiB (a longer copy is cut), lives as long as the server, and is not saved
+by
+.BR save\-session .
+.PP
+A paste types the text with each line feed turned into a carriage return, as Enter does.
+ESC, control characters other than tab, DEL and the C1 range (U+0080 to U+009F) are dropped, so a
+buffer can neither end a bracketed paste early nor send escape sequences; tab and line breaks stay.
+.PP
+The commands are listed under
+.BR COMMANDS ;
+without
+.B \-b
+they work on the newest buffer.
+.SH MOUSE SUPPORT
+.B imux
+always requests mouse events from the outer terminal.
+.IP \(bu 2
+A click in a pane makes it the active pane.
+If the program in the pane has enabled mouse reporting, it also receives the event, with
+coordinates relative to the pane.
+.IP \(bu 2
+Pressing on the border between two panes and dragging moves it with the pointer.
+Each side keeps at least one cell.
+The border is never reported to the program in a pane.
+.IP \(bu 2
+A click on a window name in the status line selects that window.
+.IP \(bu 2
+A click on the session name at the left of the status line displays the session list.
+.IP \(bu 2
+In a list, a click selects and switches to the entry under the pointer, a click outside the
+list closes it, and the wheel moves the selection.
+.SS Mouse keys
+A key of the root table (\fBbind \-n\fP) may be a mouse event, written as the kind of event, the
+button where there is one, and the place:
+.PP
+.RS
+.B MouseDown\fIN\fP\fIplace\fP
+.B MouseUp\fIN\fP\fIplace\fP
+.B MouseDrag\fIN\fP\fIplace\fP
+.B MouseDragEnd\fIN\fP\fIplace\fP
+.B DoubleClick\fIN\fP\fIplace\fP
+.B TripleClick\fIN\fP\fIplace\fP
+.B WheelUp\fIplace\fP
+.B WheelDown\fIplace\fP
+.RE
+.PP
+.I N
+is the button, 1 (left), 2 (middle) or 3 (right).
+.I place
+is
+.B Pane
+(inside a pane),
+.B Border
+(the line between two panes),
+.B Status
+(a window's entry in the status line),
+.B StatusLeft
+(the session name at its left),
+.B StatusRight
+(the blocks at its right) or
+.B StatusDefault
+(the rest of it).
+The key may have the modifiers
+.BR C\- ,
+.B M\-
+and
+.BR S\- :
+.B bind \-n C\-MouseDown1Pane ...
+.PP
+A press is
+.BR MouseDown ;
+the second and third press in a row on the same cell (within
+.BR double\-click\-time )
+are
+.B DoubleClick
+and
+.B TripleClick
+instead.
+A drag belongs to the place where its press was, and
+.B MouseDragEnd
+is the release after a drag; a release with no drag is
+.BR MouseUp ,
+in the place where it happens.
+.PP
+When a mouse key has a binding, its command runs and the event is used up: nothing else sees it,
+neither the program in the pane nor imux's own handling.
+An event with no binding does what it does without these keys (the list above).
+Binding a press does not turn off what that press would have done to the drag or release that
+follows it; bind those too to take them over.
+So that the command acts on what was pointed at, a press on a pane makes it the active pane and a
+press on a window's entry in the status line selects that window, before the command runs; the
+other events leave the focus alone.
+The built-in behavior cannot be switched off with
+.BR unbind ;
+a binding replaces it.
+.PP
+The command sees these variables, in formats, in
+.BR run\-shell ,
+in
+.B display\-message
+and in the menu and popup commands:
+.BR #{mouse_x} " and " #{mouse_y}
+(cells from the top left corner of the pane under the pointer),
+.B #{mouse_any_flag}
+(1 when the program in that pane asked for the mouse),
+.B #{mouse_line}
+(the text of the row, no trailing blanks) and
+.B #{mouse_word}
+(the word under the pointer).
+The last two are text a program wrote, and can only go into shell text as \fB#{q:mouse_word}\fP.
+All are empty when the pointer is not in a pane.
+.PP
+.B display\-menu
+and
+.B display\-popup
+opened by a mouse key put the box at the pointer with
+.B \-x M \-y M
+(centered on the pointer's column, from its row downwards, kept inside the window), or at the window's
+entry with
+.BR "\-x W \-y W" ;
+the variables
+.BR popup_mouse_x ,
+.BR popup_mouse_y ,
+.BR popup_mouse_center_x ,
+.BR popup_mouse_center_y ,
+.B popup_mouse_top
+and
+.B popup_mouse_bottom
+are the pointer's.
+Opened any other way, they mean the center.
+.SH COMMANDS
+Everything imux does is a command, and a command can be given in four places: at the command
+prompt (the
+.B :
+key), bound to a key (see
+.BR bind ),
+in the configuration file, and from a shell as
+.BI "imux " command\fR.
+Commands have a full name and many a short form (\fBneww\fP, \fBsplitw\fP, \fBselectp\fP, ...).
+Each is described below with its flags, in groups: clients and sessions, windows and panes, paste
+buffers, information and options, and commands for scripts.
+.SS Command syntax
+The
+.B :
+key opens a prompt on the last row.
+Enter runs the line; Escape or
+.B C\-c
+cancels.
+Words are separated by white space, and single or double quotes group a word with spaces.
+An unknown command or a bad argument is reported on the last row for two seconds.
+The newest 100 lines are remembered, shared by all clients and lost when the server exits.
+Up recalls the previous line and Down the next; Down past the newest restores what was being typed.
+Empty lines and repeats of the newest are not remembered.
+.PP
+From a shell the running server carries the command out and its output is printed.
+.B imux
+.I command
+exits with a failure and prints the reason when the command fails.
+Commands that work on a place take
+.B \-t
+.IR target ;
+most that list or create take
+.B \-F
+.IR format ,
+which has the variables of
+.B "STATUS LINE"
+and these:
+.PP
+.PD 0
+.TP 12
+session
+.BR #{session_id} ,
+.BR #{session_windows} ,
+.B #{session_attached}
+.TP
+window
+.BR #{window_id} ,
+.BR #{window_width} ,
+.BR #{window_height} " (the part of the screen the panes use),"
+.B #{window_panes}
+.TP
+pane
+.BR #{pane_id} ,
+.BR #{pane_index} ,
+.BR #{pane_width} ,
+.BR #{pane_height} ,
+.BR #{pane_left} ,
+.BR #{pane_top} ,
+.BR #{pane_right} ,
+.BR #{pane_bottom} " (cells from the top left corner of the window, the last two inclusive),"
+.BR #{cursor_x} ,
+.BR #{cursor_y} " (cells from the top left corner of the pane),"
+.BR #{pane_active} ,
+.BR #{pane_in_mode} ,
+.BR #{pane_input_off} " (1 after " "select\-pane \-d" "),"
+.BR #{pane_restore_missing} " (1 while a restored pane is in the home directory because its saved one is gone),"
+.BR #{pane_spawned_by} " (the pane whose program asked for this one, as " %N "; empty for a pane you made),"
+.BR #{agent_name} " (the name of the agent in the pane, empty without one),"
+.BR #{pane_pid} ,
+.BR #{pane_dead} " (1 for a pane " remain\-on\-exit " kept after its program ended),"
+.BR #{pane_dead_status} " (its exit status),"
+.BR #{pane_title} ,
+.BR #{pane_current_path} ,
+.B #{pane_current_command}
+.TP
+client
+(for
+.BR list\-clients )
+.BR #{client_name} ,
+.BR #{client_readonly} ,
+.BR #{client_session} ,
+.BR #{client_width} ,
+.B #{client_height}
+.PD
+.PP
+In
+.BR display\-message ,
+a name that is none of these is read as an option: \fB#{status}\fP is
+.B on
+and \fB#{status\-position}\fP is
+.BR bottom .
+.PP
+A target is
+.IB session : window . pane\fR,
+each part optional.
+A session is its name (exact, else a unique prefix, else a pattern with
+.B *
+and
+.BR ? ),
+or
+.BI $ id\fR.
+A window is its number, its name, a position (\fB!\fP the last one, \fB+\fP and \fB\-\fP the next and
+previous, \fB^\fP the first, \fB$\fP the last), or
+.BI @ id\fR.
+A pane is its number, a position, or
+.BI % id
+alone, which names the pane wherever it is, or a place in the window:
+.BR {left-of} ,
+.BR {right-of} ,
+.B {up-of}
+and
+.B {down-of}
+(beside the active pane), and
+.BR {top} ,
+.BR {bottom} ,
+.BR {left} ,
+.BR {right}
+and the corners
+.BR {top-left} ,
+.BR {top-right} ,
+.B {bottom-left}
+and
+.BR {bottom-right} .
+A name may be written
+.BI = name
+to match exactly, with no prefix or pattern.
+.BI agent: name
+is the pane of the agent given that name by
+.B "agent name"
+(for a command that wants a window or a session, that pane's window or session).
+It takes the place of the whole target, an agent name never matches a session, window or pane, and a
+name that matches no agent is an error.
+Without a target, the pane the command was run in is meant, else the active pane of the session
+used last.
+.SS Who may run commands
+Every command works at the prompt, in a key binding and in the configuration file.
+From a shell, most commands (the lists, creating, closing and selecting sessions, windows and
+panes, sending keys, buffers, options) are carried out by the server itself, with no client needed.
+Any other command (\fBcopy\-mode\fP, \fBnext\-window\fP, \fBchoose\-tree\fP, ...) is run for a client
+looking at the session, and fails when there is none.
+.PP
+A program inside a pane (its process descends from the pane's shell) can look anywhere: the
+list commands,
+.BR has\-session ,
+.B display\-message
+and
+.B capture\-pane
+of its own pane work.
+What it can touch is set by the option
+.BR command\-from\-panes ;
+the rest fails with
+.IR "not allowed from inside a pane" ,
+so that a program in a pane, such as an agent talked into something, cannot type into your other
+panes by mistake.
+The option has three values:
+.TP 10
+.B off
+Look only, as above.
+.TP
+.B spawned
+The default: a program in a pane may act on the panes it spawned, and on nothing else.
+It spawns with
+.B split\-window
+(on any pane of its own subtree, itself included) and
+.B new\-window
+(in its own session), always as if
+.B \-d
+were given, so the focus never moves.
+It may
+.BR send\-keys ,
+.BR respawn\-pane ,
+.B kill\-pane
+and
+.B kill\-window
+on a pane (a window, whose panes must all be) it spawned, directly or through the panes they
+spawned, and
+.B capture\-pane
+on those and on its own pane.
+It may not type into its own pane, nor into one the user made, nor use
+.BR \-a .
+.TP
+.B on
+Every command the socket allows, except those that run shell text.
+.PP
+imux records, from the process that sent the command, which pane made each pane the program in
+another pane asked for (\fB#{pane_spawned_by}\fP is its id, empty for a pane you made).
+A program in a spawned pane is always held to the panes it spawned itself, whatever the option
+says, and to looking while the option is
+.BR off :
+no pane has more power than the one that made it.
+.B spawned\-depth
+limits the depth (default 2: a pane you made may spawn a worker, and the worker a helper; the helper
+may not spawn), and
+.B spawned\-panes\-max
+the number of live spawned panes under one pane you made (default 16).
+A command over either limit fails with
+.IR "limit reached" ,
+naming the option.
+A
+.B split\-window
+asked for by a program in a pane is also refused with
+.I limit reached
+when it would leave either pane under
+.B pane\-min\-width
+columns or
+.B pane\-min\-height
+rows; a split you make yourself has no such limit.
+.PP
+Below
+.BR on ,
+a program in a pane may never run a command that runs shell text or changes the setup:
+.BR run\-shell ,
+.BR if\-shell ,
+.BR pipe\-pane ,
+.BR source\-file ,
+the option, binding, hook and environment commands, menus, selecting a pane or window, resizing
+and renaming.
+They would outlive the pane or act in your name.
+Each such command from a pane that is not refused outright is logged (at the
+.B info
+level) as
+.I pane\-write
+with the pane, the command, the target and the result.
+A refusal names
+.B command\-from\-panes
+and, where it applies, the pane that is outside the subtree.
+.PP
+.B display\-popup
+is not part of this ladder: it is allowed from a pane while
+.B popup\-from\-panes
+is on, with the marks described under
+.BR Popups .
+A program outside imux, run by you, has none of these limits.
+.PP
+This is a guard against mistakes, not a boundary against your own account.
+A program that detaches itself from its pane (for example by forking and letting its parent exit),
+or that attaches a client of its own, looks like you to the server and is not held back.
+Requests that are not commands, such as
+.BR kill\-server ,
+snapshots and worktree operations, are not checked at all.
+.SS Clients and sessions
+.PD 0
+.TP 28
+.B imux
+Attach to the server, starting it if it is not running.
+A new client attaches to the session most recently switched to.
+.TP
+.BR "imux attach" " [" \-t " \fIname\fP] [" \-drx ]
+Attach to the server; fail if it is not running.
+With
+.B \-t
+attach to the session of that name, which must exist.
+.B \-d
+first detaches every other client of that session (the most recent one without
+.BR \-t ).
+.B \-r
+attaches a client that only watches: what it types and its mouse are dropped, except the keys that
+detach it (the prefix and its detach key, or a root binding of
+.BR detach\-client ),
+and it does not count as the client that last typed for
+.BR window\-size\ latest .
+It still sets the size of the window like any client (see
+.BR window\-size ).
+.B list\-clients
+marks it
+.B (read\-only)
+and
+.B #{client_readonly}
+is 1.
+The restriction is made by the client's own request, to guard against slips; it is not a boundary
+against other processes of the same user.
+.B \-x
+is accepted and has no effect.
+.TP
+.BR "imux new" " [" \-s " \fIname\fP] [" \-AD ]
+Create a new session and attach to it, starting the server if it is not running.
+Without
+.B \-s
+the session is named with the lowest unused number; a name already in use is an error.
+.B \-A
+attaches to the session of that name if it exists (and creates it if it does not);
+.B \-D
+detaches the other clients of an existing session first.
+Any other flag (\fBnew \-d\fR) is the
+.B new\-session
+command below.
+.TP
+.B new\-session
+.TQ
+.BR "imux new\-session" " \-d [" \-s " \fIname\fP] [" \-n " \fIwindow\fP] [" \-c " \fIdir\fP] [" \-x " \fIcols\fP] [" \-y " \fIrows\fP] [" \-P " [" \-F " \fIformat\fP]] [\fIcommand\fP ...]"
+At the prompt, create a session and switch to it.
+From a shell, create one without attaching, starting the server if none runs; without
+.B \-d
+it refuses and says how to attach (\fBimux new \-s \fIname\fR).
+.B \-n
+names its window,
+.B \-c
+sets the directory,
+.B \-P
+prints the new place, and a command is run in the first pane instead of the shell (see
+.BR new\-window ).
+A session made with
+.B \-d
+is
+.B default\-size
+(80 by 24) until a client looks at it;
+.B \-x
+and
+.B \-y
+give its width and height in cells (10 to 1000; one alone keeps the other from
+.BR default\-size ).
+.TP
+.BR "imux ls" ", " list\-sessions " [" \-F " \fIformat\fP] [" \-f " \fIfilter\fP]"
+.TQ
+.BR list\-clients " [" \-F " \fIformat\fP] [" \-f " \fIfilter\fP]"
+One line per session or client.
+A
+.B \-f
+filter is a format (for example
+.BR #{==:#{session_name},work} );
+in all four
+.B list\-
+commands, only the lines for which it expands to something other than nothing or
+.B 0
+are listed.
+.B imux ls
+prints each session with its name, its number of windows and whether a client is attached.
+It fails if the server is not running.
+.TP
+.BR has\-session " " \-t " \fIsession\fP"
+Succeeds when the session exists.
+.TP
+.BR kill\-session " [" \-a "] [" \-t " \fIname\fP]"
+Close every pane of the current or named session.
+Its clients move to another; killing the only session ends the server.
+With
+.B \-a
+every session but that one is closed.
+.TP
+.B imux kill\-server
+Terminate the server and hang up every program in it; the sessions end and are not saved.
+It works whatever protocol version the server speaks.
+.IP
+Every client tells the server which protocol version it speaks before anything else.
+The version changes whenever the messages between a client and the server change, so a new build
+of imux and a server started by an older one can disagree.
+The command or attach then fails with a message that names both versions and the two ways out:
+.B imux kill\-server
+(the sessions end), or sending
+.B SIGTERM
+to the server's process number, which is in the message (the sessions are saved first, and
+.B restore\-on\-start
+brings them back when imux is started again).
+A server that predates the check cannot say so; the client reports that it closed the connection
+without an answer and gives the same advice.
+.TP
+.B imux skill [path]
+Print the agent skill: a short guide, as a
+.B SKILL.md
+file, written for a coding agent running in a pane.
+It covers how to open a sibling pane without taking the focus, run a command, start and prompt
+another agent, read a pane and wait, and what never to do.
+The copy is built into this imux, so it matches the commands it has.
+.B imux skill path
+prints the default place for it, under the home directory.
+.B imux setup
+installs it there; or install it yourself, with
+.B imux skill > FILE
+where your agent reads skills from, and run
+.B imux doctor
+to see whether the file at the default place is there and the same.
+.TP
+.B imux setup [\-\-man\-dir dir] [\-\-skill\-path file] [\-\-shell name] [\-\-no\-man] [\-\-no\-skill] [\-\-no\-shell]
+Install the manual and the agent skill, and add one line to your shell startup file, unless they are
+already there.
+The manual and the skill are built into this imux, so what is installed matches it.
+The manual goes to
+.I dir/man1/imux.1
+(default
+.IR $XDG_DATA_HOME/man/man1/imux.1 ,
+else
+.IR ~/.local/share/man/man1/imux.1 )
+and the skill to
+.I file
+(default: the place
+.B imux skill path
+prints).
+The shell line is
+.B eval "$(imux init zsh)"
+(or
+.BR bash ;
+for fish,
+.BR "imux init fish | source" ),
+added once, at the end of the shell's startup file under a comment that names imux:
+.I $ZDOTDIR/.zshrc
+or
+.IR ~/.zshrc ,
+.I ~/.bashrc
+(or
+.I ~/.bash_profile
+when that is the only one there), and
+.IR $XDG_CONFIG_HOME/fish/config.fish .
+The shell is the one in
+.BR $SHELL ,
+or the one
+.B \-\-shell
+names; for any other shell nothing is added and the report says so. A file that already mentions
+.B imux init
+is not changed, and the rest of the file is kept as it is.
+The line makes the
+.B tmux
+link of a pane come first on
+.BR PATH ;
+see
+.BR "Programs that look for a terminal multiplexer" .
+One line is printed for each: installed, added, updated (the file was there but differed, as after an
+upgrade), already installed, or left alone (the path is a symlink or not a regular file).
+Run it after installing and again after upgrading imux. The install script runs it for you; the Homebrew formula tells you to.
+This and
+.B imux skill
+are the only imux commands that write outside its own state directory, and
+.B setup
+does so only when you run it.
+If
+.B man imux
+does not find the page, add the
+.I man
+directory above the one it was written to to
+.BR MANPATH .
+.TP
+.B imux doctor
+Print what decides how pictures and the screen are drawn, one
+.IB key ": " value
+line each, and change nothing: no server is started and no file is written.
+It shows:
+.RS
+.IP \(bu 2
+the terminal: the environment, its name from XTVERSION, whether it answers the Kitty graphics and
+Sixel queries, the size of a cell in pixels, and the picture protocols it accepts;
+.IP \(bu 2
+the picture mode a client would get with the current options (see
+.BR image\-mode ,
+.BR image\-prefer ,
+.BR image\-probe );
+.IP \(bu 2
+the configuration file, with every problem in it named by file and line (lines are parsed and
+options applied; the files of
+.B source\-file
+are not followed, and a command line is checked for its syntax only), and the options it sets that
+are accepted but have no effect;
+.IP \(bu 2
+the socket directory and whether a server runs (with its process number), and whether that server
+speaks the same protocol version as this imux (a
+.B protocol
+line; a difference, or a server too old to say, is reported as a
+.BR PROBLEM );
+.IP \(bu 2
+the installed plugins, the four agent glyphs, and whether the agent skill is installed and the same
+as this imux's copy (a
+.B skill
+line).
+.RE
+.IP
+A line starting with
+.B hint
+says what to change.
+The terminal is asked the way an attach asks it, so this needs a terminal; without one the
+terminal lines say so and the rest is printed.
+.TP
+.BR "imux check\-config" " [" \-\-summary "] [" \fIfile\fP ...]
+Read configuration files and say what
+.B imux
+does not take in them, one line per finding as
+.IR file:line:\ kind:\ item ,
+then the number of findings of each kind and the items found most often.
+Without a file it reads the one
+.B imux
+would read; a file named by
+.B source\-file
+is read too (to a depth of 8, 64 files).
+The kinds that count as problems are
+.BR unknown\-command ,
+.BR unknown\-flag ,
+.BR unknown\-option ,
+.B unknown\-variable
+and
+.B unknown\-modifier
+(a name or operator in a format string that
+.B imux
+does not have),
+.B refused
+(any other line it rejects) and
+.BR unreadable .
+The kinds that only inform are
+.BR ignored\-command ,
+.BR ignored\-option ,
+.B user\-option
+(\fB@name\fP, a user option; the dry read keeps no value) and
+.BR missing\-file .
+The exit status is 1 when there is a problem.
+Nothing is started, written or changed; programs run by lines such as
+.B run\-shell
+and plugins are not run or read.
+.B \-\-summary
+prints only the counts.
+.TP
+.BR "imux init" " " zsh | bash | fish
+Print the lines that keep the
+.B tmux
+link first on
+.BR PATH ;
+see
+.BR "Programs that look for a terminal multiplexer" .
+.TP
+.BR "imux completions" " " zsh | bash | fish | pwsh | nu
+Print a completion script for that shell; nothing is started or written.
+It offers the commands and the words of the client's own commands (such as
+.B imux agent
+and
+.BR "imux plugin" ),
+the option names after
+.BR set ,
+.BR setw ,
+.B show\-options
+and their long forms, and the event names after
+.BR set\-hook .
+Sessions, windows and panes (the targets) are left to the shell.
+Load it with
+.B eval "$(imux completions zsh)"
+(or
+.BR bash )
+in the shell's startup file,
+.B imux completions fish | source
+(or save the output as
+.IR ~/.config/fish/completions/imux.fish ),
+.B imux completions pwsh | Out\-String | Invoke\-Expression
+in the PowerShell profile, or save the output of
+.B imux completions nu
+to a file and
+.B source
+it from
+.IR config.nu .
+For zsh the output can also be saved as
+.I _imux
+in a directory of
+.BR $fpath .
+ksh has no programmable completion, so there is no script for it.
+.TP
+.BR rename\-session " [" \-t " \fIsession\fP] \fIname\fP"
+Set the session's name; a name already in use is refused.
+.TP
+.BR switch\-client " " \-n | \-p | \-l | "\-t \fItarget\fP"
+Switch to the next, previous or last (previously looked at) session, or to the session (and
+window) the target names.
+.TP
+.BR choose\-tree " [" \-s | \-w ]
+.TQ
+.BR choose\-window ", " choose\-session
+The session list, or sessions and windows (default);
+.B choose\-session
+is the first and
+.B choose\-window
+the second.
+The flags
+.BR Z ,
+.BR N ,
+.BR G ,
+.B r
+and
+.B y
+are accepted and have no effect, so
+.B \-Zw
+works.
+.IP
+In this list, the repository wizard, the buffer and client lists, and the lists of
+.B list\-keys
+and
+.BR show\-messages ,
+the key
+.B /
+starts a filter: every word typed must appear in an entry's text, in order, and the best matches
+come first; a query with a capital letter is case-sensitive.
+The query and the number of entries kept are written on the bottom border.
+While typing, the arrow keys and Page Up and Down still move, Ctrl-C closes, and Backspace and
+Ctrl-U edit.
+Enter ends the typing and keeps the filtered list (then
+.B /
+edits the query again).
+Escape clears the query, and Escape on an empty query closes the list.
+.TP
+.B choose\-client
+.TQ
+.BR detach\-client " [" \-a "] [" \-s " \fIsession\fP] [" \-t " \fIclient\fP]"
+.TQ
+.B suspend\-client
+.TQ
+.B refresh\-client
+List the attached clients and detach the one chosen (as
+.BR D ),
+detach this client (as
+.BR d ),
+stop it as a job (as
+.BR C\-z ),
+or redraw its screen.
+From a shell (or a key) a client is named as
+.B list\-clients
+prints it,
+.BR client\-\fIN\fP :
+.B \-t
+detaches that one,
+.B \-a
+all the others, and
+.B \-s
+every client of a session.
+.PD
+.PP
+The commands for saving and restoring sessions are described under
+.BR PERSISTENCE ,
+those for worktrees under
+.BR WORKTREES ,
+for agents under
+.BR "AGENT STATUS" ,
+and for events and plugins under
+.B EVENTS
+and
+.BR PLUGINS .
+.SS Windows and panes
+.PD 0
+.TP 28
+.BR new\-window " [" \-ad "] [" \-t " \fIsession\fP] [" \-n " \fIname\fP] [" \-c " \fIdir\fP] [" \-e " \fINAME=VALUE\fP] [" \-P " [" \-F " \fIformat\fP]] [\fIcommand\fP ...]"
+.TQ
+.BR split\-window " [" \-hvdbf "] [" \-t " \fIpane\fP] [" \-c " \fIdir\fP] [" \-e " \fINAME=VALUE\fP] [" \-l " \fIsize\fP] [" \-P " [" \-F " \fIformat\fP]] [\fIcommand\fP ...]"
+Create a window or split a pane.
+.B new\-window \-a
+puts the window right after the current one.
+.B new\-window \-t
+.I session:N
+makes the window only when N is the next number (numbers have no gaps) and refuses one in use.
+A command name may be given by its start when exactly one imux command begins with it
+.RB ( show\-option
+for
+.BR show\-options ),
+at least three letters; a command alias is looked up first, and a start of several names is an
+error that lists them.
+.B \-e
+(any number, up to 32) adds a variable to the program's environment; a name must be letters, digits
+and underscores, a name starting with
+.B IMUX_
+is refused (imux sets those), and the value is at most 4096 bytes.
+.B split\-window
+puts the new pane beside the old one with
+.B \-h
+and below it with
+.B \-v
+(the default).
+Its size is given with
+.BI \-l " cells"
+or
+.BI \-l " percent" %
+(also
+.BI \-p " percent" ),
+cut to what leaves a cell for each half.
+.B \-b
+puts the new pane before the old one (left of it, or above), and
+.B \-l
+still sizes the new pane.
+.B \-f
+splits the whole window instead of one pane: the new pane spans the full width (with
+.BR \-v )
+or height (with
+.BR \-h )
+and everything else shares the rest; with
+.B \-b
+it goes above or to the left.
+A command is run by the shell with
+.BR \-c ,
+and the pane ends with it; several words are quoted for the shell, one word is used as it is.
+.B \-d
+keeps the selection where it was,
+.B \-n
+names the window,
+.B \-c
+sets the directory, and
+.B \-P
+prints the new place.
+.TP
+.BR kill\-window ", " kill\-pane " [" \-a "] [" \-t " \fItarget\fP]"
+Close the window or pane.
+With
+.B \-a
+.B kill\-window
+closes every window of the session but the target, and
+.B kill\-pane
+every pane of the window but the target.
+.BR unlink\-window " [" \-k "] [" \-t " \fIwindow\fP]"
+is the same as
+.B kill\-window
+(a window is never in two sessions, so there is no other link to keep).
+.TP
+.BR select\-window " [" \-lnp "] [" \-t " \fIwindow\fP]"
+.TQ
+.BR next\-window ", " previous\-window ", " last\-window
+Select a window by number or name, or change window.
+.B "next\-window \-a"
+and
+.B "previous\-window \-a"
+go to the next or previous window that has an activity or bell flag, wrapping, and say so when no
+other window has one.
+.TP
+.BR swap\-window " [" \-d "] [" \-s " \fInumber\fP] " \-t " \fInumber\fP"
+Exchange two windows (the source defaults to the current one).
+The window now at the target position becomes current unless
+.BR \-d .
+.B swap\-window \-t \-1
+(or
+.BR +1 )
+without
+.B \-s
+trades places with the window before (after) the current one.
+.TP
+.BR move\-window " [" \-dakr "] [" \-s " \fInumber\fP] " \-t " \fInumber\fP"
+Move a window to the target position; those in between shift by one.
+It becomes current unless
+.BR \-d .
+.B \-a
+puts it right after the target window, and
+.B \-k
+first kills the window that is at the target position.
+Numbering has no gaps, so
+.B \-r
+(renumber) is accepted and does nothing.
+.B \-s
+and
+.B \-t
+also take
+.IB session : number
+(as
+.BR "imux move\-window \-s work:1 \-t other:5" ):
+a window moves to another session, at that place, or at the end if the number is past the last.
+The only window of a session cannot leave it, and
+.B swap\-window
+works inside one session.
+.TP
+.BR rename\-window" [" \-t " \fIwindow\fP] \fIname\fP"
+Set the window's name; this turns off its automatic naming.
+.TP
+.BR list\-windows " [" \-a "] [" \-t " \fIsession\fP] [" \-F " \fIformat\fP] [" \-f " \fIfilter\fP]"
+.TQ
+.BR list\-panes " [" \-as "] [" \-t " \fItarget\fP] [" \-F " \fIformat\fP] [" \-f " \fIfilter\fP]"
+One line per window or pane.
+.TP
+.BR find\-window " [\fItext\fP]"
+Find windows of the current session whose name or visible screen holds the text, ignoring case.
+One match is selected, several are offered in the window list, none is reported.
+Without text the prompt asks.
+.TP
+.BR select\-pane " [" \-LRUDlmMde "] [" \-T " \fItitle\fP] [" \-t " \fIpane\fP]"
+.TQ
+.B last\-pane
+Select a pane:
+.BR \-L ,
+.BR \-R ,
+.B \-U
+and
+.B \-D
+the neighboring one,
+.B \-l
+or
+.B last\-pane
+the one active before.
+.B \-m
+marks the active pane (unmarks it if marked) and
+.B \-M
+clears the mark.
+There is one mark for the whole server; its window shows the flag
+.B M
+(see
+.BR #{window_flags} ).
+.B \-d
+stops what a client types (keys, paste and mouse reports) from reaching the pane, and
+.B \-e
+lets it through again;
+.B send\-keys
+is not held back.
+.B \-T
+sets the pane's title (control characters are dropped, at most 256 characters); a program that sets
+its own title replaces it.
+.TP
+.BR resize\-pane " [" \-t " \fIpane\fP] {" \-L | \-R | \-U | \-D "} [" cells ]
+Move the pane's edge, one cell by default.
+.TP
+.BR resize\-pane " [" \-t " \fIpane\fP] [" \-x " \fIwidth\fP] [" \-y " \fIheight\fP]"
+Make the pane that wide or high, as far as the layout allows (a number of cells, or a percentage of
+the window such as
+.BR 30% ).
+From the command line these forms need no attached client.
+.TP
+.BR resize\-pane " " \-M
+Only meaningful as the command of a mouse key (\fBbind \-n MouseDrag1Border resize\-pane \-M\fP).
+It stands for what dragging a border does, which imux does by itself, so the command changes
+nothing and the drag goes on to the built\-in handling.
+.TP
+.BR resize\-pane " " \-Z
+Zoom the pane to fill the window; the others are hidden, not closed or resized.
+Running it again, moving to another pane, resizing, splitting or closing a pane ends the zoom.
+The window shows the flag
+.B Z
+(see
+.BR #{window_flags} ).
+.TP
+.BR select\-layout " [" \-t " \fIwindow\fP] {" \fIlayout | \-E | \-n }
+.TQ
+.B next\-layout
+Arrange the panes as
+.BR even\-horizontal ,
+.BR even\-vertical ,
+.BR main\-horizontal ,
+.BR main\-horizontal\-mirrored ,
+.BR main\-vertical ,
+.B main\-vertical\-mirrored
+or
+.BR tiled .
+The first pane is the main pane of the
+.B main\-
+layouts: at most 80 columns or 24 rows and two thirds of the window; the mirrored ones put it on
+the right or at the bottom.
+.B \-E
+keeps the structure and shares the room out in proportion to the number of panes.
+.B next\-layout
+chooses the layout after the one chosen last (in the order above), the first if none yet;
+.B \-n
+with
+.B \-t
+does the same for a named window.
+.I layout
+may also be a layout string as
+.B #{window_layout}
+prints it (for example
+.BR "a844,80x23,0,0{78x23,0,0,0,1x23,79,0,1}" ).
+The panes of the window, in order, take the places the string describes, scaled to the window; a
+string with a bad checksum or another number of panes is refused and the layout stays.
+.TP
+.BR break\-pane " [" \-d "]"
+Move the pane to a window of its own and select it; with
+.B \-d
+the current window stays selected.
+.TP
+.BR join\-pane ", " move\-pane " [" \-hvdbf "] [" \-l " \fIsize\fP] [" \-s " \fIpane\fP] [" \-t " \fIpane\fP]"
+Take a pane out of its window (one left without panes goes) and split it into the window of the
+target pane, where it becomes the active pane unless
+.B \-d
+is given.
+.B \-b
+puts it before the target (left of it, or above) and
+.B \-f
+splits the whole window, as for
+.BR split\-window .
+The window of the source must be another one; the only pane of the only window of a session cannot
+be moved.
+.TP
+.BR swap\-pane " [" \-U | \-D ]
+.TQ
+.BR swap\-pane " [" \-d "] [" \-s " \fIpane\fP] [" \-t " \fIpane\fP]"
+With a direction, exchange the pane with the previous or next one; it stays active.
+Without one, exchange the pane with the marked pane of the same window.
+With
+.B \-s
+or
+.B \-t
+the two panes trade places, in one window or between two windows (also of different sessions).
+Each window keeps its focus on the same place, so the pane that moved in is active where the active
+pane moved out.
+.B \-d
+is accepted and changes nothing.
+.TP
+.BR rotate\-window " [" \-D ]
+Move every pane to the previous place (next with
+.BR \-D ), wrapping round.
+.TP
+.BR respawn\-pane ", " respawn\-window " [" \-k "] [" \-c " \fIdir\fP] [" \-t " \fItarget\fP] [\fIcommand\fP ...]"
+Start the shell, or the command, again in a pane (for
+.BR respawn\-window ,
+a window of one pane): the program in it is hung up and the pane keeps its place, size and number.
+.B \-k
+is needed unless the program has ended and
+.B remain\-on\-exit
+kept the pane (a dead pane); the pane then starts again with nothing to hang up.
+.TP
+.B display\-panes
+.TQ
+.B clock\-mode
+Show the pane numbers (as
+.BR q ;
+.B display\-panes \-d
+.I milliseconds
+keeps them up that long, at most a minute), or a clock in the active pane (as
+.BR t ).
+.B display\-panes
+.RB [ \-d " \fIms\fP] \fItemplate\fP"
+instead of selecting the chosen pane runs the template for it, with
+.B %%
+the pane's id (\fB%3\fP).
+.PD
+.SS Menus
+.TP 28
+.B display\-menu
+.TQ
+.B menu
+.RB [ \-OM "] [" "\-b lines" "] [" "\-C n|\-" "] [" "\-H style" "] [" "\-s style" "] [" "\-S style" ]
+.RB [ "\-t target" "] [" "\-T title" "] [" "\-x position" "] [" "\-y position" "] [\-\-]"
+.I name key command ...
+.PP
+Show a box of items over the panes.
+Each item is three words: a name, a key and a command.
+An empty name is a rule between groups and stands alone; a name that starts with a dash is shown
+dim and never chosen (put
+.B \-\-
+before the first item when it starts with a dash).
+The name, the title and
+.B \-t
+(the pane the formats are about) are formats, expanded when the menu opens; control characters in
+them are removed.
+The command is not expanded: it runs as a command line, as typed at the prompt, and expands what
+it needs itself.
+A rule at the start, at the end or after another rule is dropped, and so is an item whose name is
+empty after expansion.
+.PP
+The key is one character, or
+.BI C\- x\fR,
+.BR Enter ,
+.BR Space ,
+.BR Tab ,
+.BR Escape ,
+.BR Up ,
+.BR Down ,
+.BR Home ,
+.BR End ,
+.BR PageUp ,
+.BR PageDown .
+It is shown as
+.RB ( k )
+at the right edge when it fits beside the longest name; a key that names nothing a terminal
+sends is only shown.
+A name too long for the screen is cut and ends in
+.BR > .
+A menu that does not fit in the pane area is not shown, and a message says so.
+.PP
+Keys: the item's own key or Enter chooses;
+.BR Up ,
+.B k
+and
+.BR Down ,
+.B j
+move to the previous and the next item that can be chosen, wrapping;
+.BR PageUp " (" C\-b ") and " PageDown " (" C\-f ")"
+move about five;
+.BR Home " and " g ", " End " and " G
+go to the first and the last;
+.BR q ,
+.BR Escape ,
+.B C\-c
+and
+.B C\-g
+close it.
+An item's key is looked at first, so an item may take
+.BR q .
+With the mouse, a click on an item chooses it, a click outside the box closes it, the wheel moves
+the choice, and the pointer moving over an item makes it the choice.
+.TP 8
+.B \-b
+Line set of the border:
+.BR single " (the default), " rounded ,
+.BR double ,
+.BR heavy ,
+.BR simple " (ASCII), " padded " (spaces) or " none .
+.TP
+.B \-C
+The item to start on (counting rules, after the drops above), or
+.B \-
+for none; by default the first that can be chosen.
+.TP
+.BR \-s ", " \-S ", " \-H
+Style of the box, of the chosen item and of the border; the defaults are the options
+.BR menu\-style ,
+.B menu\-selected\-style
+and
+.BR menu\-border\-style .
+.TP
+.B \-T
+Title, in the top border.
+.TP
+.BR \-x ", " \-y
+Where the box goes (see
+.BR "Position of boxes" ).
+.TP
+.BR \-O ", " \-M
+Accepted so a configuration loads; they have no effect.
+.PP
+The chosen command runs for the client that looks at the menu, in the place that client is in when
+it is chosen.
+If it does not parse, a message says so.
+.B display\-menu
+follows the rules of
+.BR "Who may run commands" :
+from a program inside a pane it is refused unless
+.B command\-from\-panes
+is on, and a plugin may never run it.
+From a configuration file read at start there is no client to show it to, and it fails.
+.SS Popups
+.TP 28
+.B display\-popup
+.TQ
+.B popup
+.RB [ \-BCEkN "] [" "\-b lines" "] [" "\-d dir" "] [" "\-e VAR=value" "] [" "\-h height" "] [" "\-s style" ]
+.RB [ "\-S style" "] [" "\-t target" "] [" "\-T title" "] [" "\-w width" "] [" "\-x position" "] [" "\-y position" "] [\-\-]"
+.RI [ "program " ...]
+.PP
+Show a box over the panes of a window, with a program running in it.
+The box takes every key typed in that window, the prefix key included, until it closes; the panes
+go on running and drawing underneath.
+A window has one popup: asked for another, the command does nothing.
+A popup is in no layout: it is not listed by
+.BR list\-panes ,
+is not saved with the sessions, does not count in the window's pane count, and is closed when its
+window goes.
+The state of an agent in it is rolled up into the window like that of a pane.
+.PP
+.I program
+is one word, run by the shell of the pane (as
+.BR "sh \-c" ),
+or several words, quoted for that shell and run the same way; with none, the box runs the shell
+itself.
+A command given on a line with others does not make them wait; only a command from a shell (see
+below) waits.
+.TP 8
+.B \-b
+Line set of the border, as for
+.BR display\-menu .
+.B \-B
+draws no border.
+.TP
+.B \-d
+Working directory of the program; by default that of the active pane.
+.TP
+.B \-e
+A variable for the program, as
+.IR NAME=value ;
+may be given more than once.
+Variables of imux itself (the ones that start with
+.BR IMUX_ )
+are not taken.
+.TP
+.BR \-w ", " \-h
+Width and height, with the border: a number of cells, or a number and
+.B %
+of the part of the screen the panes use.
+By default half of each.
+A box that would be smaller than three by three cells with a border (one by one without) is not
+shown, and one that is larger than the screen is cut down to it.
+.TP
+.BR \-x ", " \-y
+Where the box goes (see
+.BR "Position of boxes" ).
+.TP
+.BR \-s ", " \-S
+Style of the box and of its border; the defaults are the options
+.B popup\-style
+and
+.BR popup\-border\-style .
+.TP
+.B \-T
+Title, a format expanded when the popup opens, in the top border.
+.TP
+.B \-t
+The pane the formats and the place are about.
+.TP
+.B \-C
+Close the popup of the window and do nothing else.
+.TP
+.BR \-E ", " \-k ", " \-N
+When it closes (see below).
+.PP
+When the popup closes:
+.TS
+l l.
+no \fB\-E\fP	T{
+the program ends and the box stays, showing what it printed; Escape closes it (a stayed box
+drops any other key); while the program runs, Escape and \fBC\-c\fP close the box
+T}
+\fB\-E\fP	T{
+the box closes when the program ends; Escape and \fBC\-c\fP reach the program
+T}
+\fB\-E \-E\fP	T{
+the box closes when the program ends with status 0, and stays when it does not; Escape and
+\fBC\-c\fP reach the program
+T}
+\fB\-k\fP	T{
+any key (not only Escape) closes a box that stayed
+T}
+\fB\-N\fP	T{
+forgets the \fB\-E\fP and \fB\-k\fP before it
+T}
+.TE
+.PP
+Whatever the program does, pressing the prefix key three times in a row closes the popup.
+.PP
+The mouse inside the box goes to the program when it asked for the mouse; elsewhere it is
+ignored while a popup is open.
+A box is kept inside the screen when the screen changes size, and the program's screen is resized
+to fit it.
+Pictures the program prints are kept and drawn in the box.
+.PP
+Run from a shell (a command on the socket), the command waits until the popup has closed.
+It succeeds when the program ended with status 0 or the box was closed by a key, and fails, saying
+the status, when the program ended with another;
+.B imux
+then returns 1.
+The popup is closed when the connection goes away.
+.PP
+Who may ask for a popup: a key, the configuration, the prompt and a program outside imux.
+A process the popup itself started counts as you, since a key or command of yours started it.
+A program inside a pane may ask for one while
+.B popup\-from\-panes
+is on (the default; programs that show a choice in a popup, such as a file finder, need it).
+Such a popup shows
+.B [from %N]
+(the pane) in its top border, drawn by imux and never taken from the program, and the processes
+it starts may look but not touch, like those of a pane.
+With the option off, a program in a pane is refused unless
+.B command\-from\-panes
+is on, and the refusal names the option.
+A plugin may never run it.
+.PP
+A program in a pane that may ask for a popup can draw one over any pane, with any text, and read
+the keys typed into it, for instance a prompt that looks like another program's.
+The marker and the three presses of the prefix key are what show and end it; turn
+.B popup\-from\-panes
+off when programs in panes are not to be trusted with that.
+.SS Position of boxes
+.B \-x
+and
+.B \-y
+of
+.B display\-menu
+and
+.B display\-popup
+count cells from the top left corner of the part of the screen the panes use (the status line and a
+docked panel are not part of it).
+.B \-x
+is the box's left column;
+.B \-y
+is the row of the box's
+.I bottom
+edge, so
+.B \-y 10
+for a box four rows high fills rows 6 to 9, and a box that would start above the first row starts
+on it.
+The box is always kept inside that part of the screen.
+.PP
+Instead of a number:
+.TP 8
+.B C
+The center (the default).
+.TP
+.B P
+.B \-x
+the left edge of the pane the box is about;
+.B \-y
+the box's bottom edge on the pane's bottom edge.
+.TP
+.B R
+.B \-x
+only: the box's right edge on the pane's right edge.
+.TP
+.B L
+Where the last box of that kind was.
+.TP
+.B S
+.B \-y
+only: against the status line.
+.TP
+.BR M ", " W
+The pointer, and the pointer's column on the status line, when a command bound to a mouse key
+opened the box (see
+.BR "Mouse keys" ).
+Opened any other way there is no pointer, and these mean the center.
+.PP
+A position may also be a format that uses these variables, all numbers:
+.BR popup_center_x ,
+.BR popup_center_y ,
+.BR popup_width ,
+.BR popup_height ,
+.BR popup_pane_left ,
+.BR popup_pane_right ,
+.BR popup_pane_top ,
+.BR popup_pane_bottom ,
+.BR popup_last_x ,
+.BR popup_last_y ,
+.BR popup_status_line_y ,
+and the
+.B popup_mouse_*
+and
+.B popup_window_status_line_*
+ones, which follow the pointer as
+.B M
+and
+.B W
+do,
+together with the variables of the pane, such as
+.BR pane_width .
+The old spellings
+.B popup_centre_x
+and its relatives (\fBcentre\fP for \fBcenter\fP) also work.
+.SS Paste buffers
+A buffer is text kept by the server; copying in copy mode makes one.
+The keys are under
+.BR "PASTE BUFFERS" .
+.PP
+.PD 0
+.TP 28
+.B list\-buffers
+Scrolling list of the paste buffers, newest first, with name, size and first characters.
+.TP
+.B choose\-buffer
+The same list; Enter pastes the selected buffer into the active pane.
+.TP
+.BR show\-buffer " [" \-b " \fIname\fP]"
+Show a buffer's text in a scrolling list.
+.TP
+.BR set\-buffer " [" \-a "] [" \-b " \fIname\fP] \fItext\fP"
+Make a buffer from the text: a new automatic one, or with
+.B \-b
+replace the one of that name, or with
+.B \-a
+extend it.
+.TP
+.BR delete\-buffer " [" \-b " \fIname\fP]"
+Delete a buffer.
+.TP
+.BR paste\-buffer " [" \-dpr "] [" \-b " \fIname\fP] [" \-s " \fIseparator\fP]"
+Type a buffer into the active pane.
+A paste is always wrapped in the bracketed paste markers when the program in the pane asked for
+them;
+.B \-p
+is accepted for that and changes nothing.
+.B \-d
+deletes the buffer afterwards,
+.B \-r
+keeps line feeds as they are, and
+.B \-s
+replaces them with the separator instead of a carriage return.
+.TP
+.BR save\-buffer " [" \-a "] [" \-b " \fIname\fP] \fIpath\fP"
+.TQ
+.BR load\-buffer " [" \-b " \fIname\fP] \fIpath\fP"
+Write a buffer to a file (mode 0600, never through a symbolic link;
+.B \-a
+appends) or read a file of at most 8 MiB into a buffer.
+A path starting with
+.B ~/
+is in the home directory; a relative one is relative to the directory of the active pane's program.
+.TP
+.BR capture\-pane " [" \-pJ "] [" \-t " \fIpane\fP] [" \-S " \fIstart\fP] [" \-E " \fIend\fP] [" \-b " \fIbuffer\fP]"
+Print a pane's text (with
+.BR \-p ),
+or put it in a paste buffer.
+Line 0 is the first line of the screen, negative numbers go back into the history, and
+.B \-
+means the very start or end.
+.B \-J
+joins wrapped lines,
+.B \-N
+keeps the blanks at the end of each line, and
+.B \-e
+writes colors and attributes as escape sequences.
+.PD
+.SS Information and options
+.PD 0
+.TP 28
+.BR show\-options " [" \-qv "] [" \-t " \fIwindow\fP] [\fIoption\fP]"
+Print every option with its value (quoted where it needs it), or one option.
+.B \-v
+prints only the value, and
+.B \-q
+makes an unknown name silent.
+.B \-t
+names a window: its own value of a window option, or
+.B automatic\-rename
+as that window has it, comes before the global one.
+At the command prompt it shows the options that nothing has read yet.
+.TP
+.BR list\-keys " [" \-T " \fItable\fP]"
+Print the key bindings, or with
+.B \-T
+those of one table
+.RB ( prefix ,
+.BR root ,
+.B copy\-mode
+or
+.BR copy\-mode\-vi ).
+At the command prompt it shows every binding in a scrolling list (repeatable ones marked
+.BR \-r ), as
+.B ?
+does; Enter, Escape or
+.B q
+closes it.
+.TP
+.BR set\-window\-option " (" setw ") [" \-u "] [" \-t " \fIwindow\fP] \fIoption\fP [" on | off ]
+Give one window its own value of a window option: the window of the client, or the one
+.B \-t
+names.
+Without a value the window gets the opposite of what it has now (so
+.B bind S setw synchronize\-panes
+is a toggle key).
+.B \-u
+takes the window's value away, and it follows the global option again.
+A window without a value of its own follows the global option, which
+.B set \-g
+and
+.B setw \-g
+change.
+The window options are
+.BR synchronize\-panes ,
+.B monitor\-activity
+and
+.BR monitor\-bell .
+A window option typed without
+.B \-g
+in a configuration, where there is no window yet, sets the global option.
+Window values are not saved with a session; a restored window starts without any.
+.TP
+.BR display\-message " [" \-p "] [" \-t " \fIpane\fP] [\fItext\fP]"
+Fill in the variables of a pane and show the text on the bottom row of a client looking at the
+session (when no client looks at it, nothing is shown, and that is not an error); with
+.B \-p
+print it instead.
+Among the variables are
+.BR #S ,
+.BR #I ,
+.B #W
+and
+.B #P
+(session name, window number, window name, pane number),
+.BR #{pane_id} ,
+.B #{pane_current_path}
+and
+.BR #{pane_current_command} .
+.TP
+.B show\-messages
+The last 100 messages of the bottom row, newest first, each with its time.
+.TP
+.B command\-prompt
+Open the command prompt.
+.TP
+.BR command\-prompt " [" \-1 "] [" \-I " \fItext\fP] [" \-p " \fIlabel\fP] [" \-T " \fItype\fP] [\fItemplate\fP]"
+Ask a question on the bottom row.
+What is typed replaces
+.B %%
+in the template, and the result runs as a command line; without a template it runs as typed.
+An answer is put in as typed and is not read for
+.B %
+again.
+Escape cancels.
+.B \-I
+gives the text the answer starts with,
+.B \-p
+the label (both are formats of the current pane), and
+.B \-1
+takes one key instead of a line.
+A comma list of labels (\fB\-p "from:,to:"\fP, up to nine) asks one question after the other, with
+.B \-I
+giving a first text to each in the same way (\fB\-I "a,b"\fP).
+The answers are
+.B %1
+to
+.B %9
+in the template, and
+.B %%
+is the last one.
+Cancelling any of them cancels all.
+.B \-T
+names the kind of completion and is accepted; none is offered.
+.TP
+.BR confirm\-before " [" \-p " \fIlabel\fP] \fIcommand\fP"
+Ask for a key: the command runs on
+.B y
+or
+.BR Y ,
+and any other key cancels.
+.TP
+.BR set\-environment " [" \-gru "] \fIname\fP [\fIvalue\fP]"
+.TQ
+.BR show\-environment " [" \-g "] [\fIname\fP]"
+Change or list the variables new panes get besides the server's own environment (one set for the
+whole server;
+.B \-g
+is accepted).
+.B \-u
+keeps a variable out of new panes, and
+.B \-r
+forgets what was set so the server's value is inherited again.
+Running panes are not changed.
+.PD
+.PP
+Options, key bindings and hooks are set with
+.BR set ,
+.BR bind ,
+.BR unbind ,
+.B set\-hook
+and
+.B source\-file
+(see
+.BR CONFIGURATION ,
+.B "KEY BINDINGS"
+and
+.BR HOOKS ).
+A key can run any command the socket accepts, with its flags, for the client that pressed it
+(\fBsend\-keys\fP, \fBset\fP, \fBnew\-window \-a \-d \-n\fP, \fBjoin\-pane\fP and so on); its output
+is shown on the bottom row, and so is its error.
+.BR wait\-for ,
+.B wait
+and
+.B plugin\-reload
+cannot be bound.
+.SS Commands for scripts
+.PD 0
+.TP 28
+.BR send\-keys " [" \-lXFH "] [" \-N " \fIn\fP] [" \-t " \fIpane\fP] \fIkey\fP ..."
+Type into a pane: a word that is a key name (\fBEnter\fP, \fBC\-c\fP, \fBUp\fP, \fBF5\fP) is that
+key, any other is text.
+.B \-l
+types every word as text.
+.B \-F
+expands each word as a format first (control characters in the result are dropped).
+.B \-H
+takes the words as bytes in hexadecimal (\fB1b 5b 41\fP, or \fB0x1b\fP) and types exactly those;
+if one of them is not a byte, nothing is typed, and nothing is typed either when
+.B \-N
+is not a number from 1 to 1000.
+.B \-X
+runs a copy mode action (see
+.BR "COPY MODE" )
+on a pane in copy mode.
+The prefix and key tables are not consulted.
+In a window with
+.B synchronize\-panes
+the keys go to its other running panes too.
+.TP
+.BR wait\-for " [" \-L | \-S | \-U "] \fIchannel\fP"
+Synchronize scripts.
+By itself it waits until another
+.B "wait\-for \-S"
+names the channel (a signal sent before anyone waits is kept for the next wait).
+.B \-L
+takes a lock on the channel and waits while another holder has it, and
+.B \-U
+frees it and gives it to the next in line.
+A channel name is up to 64 letters, digits,
+.BR . ,
+.B _
+and
+.BR \- ;
+there are at most 64 channels and 64 waiting clients.
+A program in a pane may use it, which is how a command sent to a pane reports back.
+.TP
+.BR pipe\-pane " [" \-IOo "] [" \-t " \fIpane\fP] [\fIcommand\fP]"
+Run a command, under
+.BR "sh \-c" ,
+that gets everything the pane prints on its standard input
+.RB ( \-O ,
+the default) and/or whose standard output is typed into the pane
+.RB ( \-I ,
+looked at twice a second).
+With no command the pipe is closed (the command sees the end of its input).
+.B \-o
+only opens a pipe if none is open.
+A command that falls more than 1 MiB behind is stopped with a message, never allowed to slow the
+pane down; it is hung up when the pane closes.
+The command is not expanded; the pane's number is in
+.BR $IMUX_PANE_ID .
+It is refused to programs in panes.
+.PD
+.PP
+Two commands run a program for you.
+They work in a configuration file, bound to a key and at the command prompt, and nowhere else:
+.B imux run\-shell
+and the like fail, so neither a program in a pane nor anything that can reach the socket can make
+the server run a command.
+.PP
+.PD 0
+.TP 28
+.BR run\-shell " [" \-bC "] \fIcommand\fP"
+Run
+.I command
+under
+.BR "sh \-c" ,
+in the directory of the current pane, in a process group of its own.
+When it ends, the first line it printed (standard error included) is shown on the message row, or
+.I 'command' returned N
+if it printed nothing and failed.
+The commands after it wait until it has ended: the rest of the line at the prompt, the rest of a
+chain bound to a key (\fBbind x run\-shell a \e; display b\fP), and the following lines of a
+configuration file or of a
+.B source\-file
+(there the server waits for it, and the command must not ask the server for anything).
+At a key or the prompt the other clients are not held up.
+.B \-b
+runs it in the background: nothing waits.
+.B run
+is
+.B run\-shell
+in a key binding or at the prompt; in a configuration file it is
+.BR "run\-shell \-b" ,
+so that a plugin script started there can call back into the server through
+.B tmux
+(see
+.BR "tmux shim" )
+while the rest of the file is read.
+The command's environment has the
+.B tmux
+shim first on
+.B PATH
+and
+.B $TMUX
+set when
+.B tmux\-compat
+is on; its commands have the power of the user, not of a pane.
+A command still running after
+.B run\-shell\-timeout
+seconds is stopped with everything it started; at most 8 run at once, and they are stopped when
+the server ends.
+.B \-C
+takes
+.I command
+as an imux command line instead.
+.IP
+.I command
+is a format.
+A variable that a program in the pane could have set (the window and session names,
+.BR #{pane_title} ,
+.BR #{pane_current_path} ,
+.BR #{pane_current_command} )
+is refused in it, because it could turn into commands.
+Write
+.BI #{q: name }
+to get the value as one quoted word (with
+.B \-C
+the text is read as imux commands, so write
+.BI #{c: name }
+for a double-quoted word instead), or read the environment: every variable is also set as
+.BI $IMUX_ NAME
+(\fB$IMUX_WINDOW_NAME\fP, ...), together with
+.BR $IMUX_PANE_ID " and " $IMUX_SOCKET_PATH .
+Numbers, flags and ids (\fB#{pane_id}\fP, \fB#{window_index}\fP, ...) need no quoting.
+The flags
+.B \-d
+and
+.B \-t
+of other programs are refused by name.
+.TP
+.BR if\-shell " [" \-bF "] \fIcondition\fP \fIcommand\fP [\fIelse\fP]"
+Run the imux command line
+.I command
+if the shell command
+.I condition
+exits with 0, else
+.I else
+if there is one (the condition is handled like the text of
+.BR run\-shell ).
+With
+.B \-F
+.I condition
+is a format, true when it expands to something that is neither empty nor
+.BR 0 ,
+and nothing is run in a shell.
+The abbreviation is
+.BR if .
+Like
+.BR run\-shell ,
+it holds back the commands after it until the condition has been decided, unless
+.B \-b
+is given.
+.SS Programs that look for a terminal multiplexer
+Tools that show a choice in a box (a fuzzy finder with its popup option, the popup mode of a
+completion plugin) look for the program
+.B tmux
+and the variable
+.BR $TMUX .
+With
+.B tmux\-compat
+on (the default) every new pane has
+.B $TMUX
+(the socket, the server's pid and 0, joined by commas),
+.B $TMUX_PANE
+(\fB%\fP and the pane's number),
+.BR $IMUX_SHIM_DIR ,
+and that directory first on
+.BR PATH .
+The directory holds a link named
+.B tmux
+to the
+.B imux
+program.
+Run under that name, it reads the usual command line of that program (global flags first, flag
+values attached to the flag or apart, \fB;\fP between commands) and runs the commands that imux has
+on the server of the pane it was started in.
+It never starts a server and never reads a configuration, and
+.B tmux
+alone is refused.
+.B tmux \-V
+prints
+.BR "tmux 3.4" ,
+the release whose commands this covers.
+.B list\-commands
+prints the names imux has (and fails for any other, which is how a program learns a command is
+missing).
+A command that imux does not have fails with its name; \-C (control mode) is refused.
+.B display\-popup
+ends with the status of its program, as the program does, so a tool sees its own exit code.
+Only panes of this server see the link; the real program elsewhere is untouched.
+With
+.B tmux\-compat
+off, a new pane has none of the variables (any it inherited from where the server was started are
+removed) and a nested real program works as always.
+Panes that exist when the option changes keep what they have.
+.PP
+The startup files of a login shell usually rebuild
+.B PATH
+and put the system and package directories first, which hides the link.
+.B imux init
+zsh|bash|fish prints a few lines that put it first again, now and before every prompt, and that do
+nothing outside a pane.
+Add one line at the
+.I end
+of the shell's startup file:
+.B eval "$(imux init zsh)"
+(or
+.BR bash ),
+.B imux init fish | source
+.RB "(fish)."
+.B imux doctor
+run in a pane says whether a plain
+.B tmux
+is the link and prints that line when it is not.
+Programs that do not need a plain name should call
+.B imux
+itself, which works with or without any of this.
+.B run
+(the plugin manager's way in) is accepted in a configuration and ignored; use
+.BR run\-shell .
+.PD
+.SH WORKTREES
+.PD 0
+.TP 28
+.BR worktree " [\fB\-\-detach\fP|\fB\-\-branch\fP] [\fB\-\-start\fP \fItext\fP] [\fB\-\-setup\fP \fItext\fP|\fB\-\-no\-setup\fP] [\fB\-\-slug\fP \fItext\fP] [\fIrepo\fP] \fIname\fP [\fIbase\fP]"
+.TQ
+.BR worktree\-remove " [\fB\-\-force\fP] [\fIrepo\fP] [\fIname\fP]"
+Open a window on a new worktree, or remove one; both also exist as
+.B imux worktree
+and
+.B imux worktree\-remove
+from a shell.
+.PD
+.PP
+.B imux worktree list
+.RI [ repo ]
+prints the worktrees of the repository the current directory is in (or
+.IR repo ),
+one per line with tabs between the columns: the path, the branch
+.RB ( (detached)
+when there is none), the windows of a running server that show it
+.RB ( session:index ,
+separated by commas, or
+.BR \- ),
+and notes
+.RB ( main ,
+.BR locked ).
+It asks git and, if one runs, the server; it opens nothing.
+For that reason a worktree cannot be named
+.BR list .
+.PP
+.B worktree
+(also
+.B imux worktree
+from a shell) opens a window on a new git worktree cut from the up\-to\-date remote base branch.
+The checkout it runs from is never touched.
+.PP
+.I name
+is the worktree's directory name: a valid git ref name matching
+.B worktree\-name\-pattern
+entirely.
+Unless
+.B \-\-detach
+(or
+.BR "worktree\-detach on" )
+is given, a branch named by
+.B worktree\-branch\-format
+is created and checked out (an existing local branch of that name is checked out as it is).
+With detach the worktree stays at the base commit, for when something else, such as a skill, makes
+the branch.
+.PP
+.I repo
+is the first word if it is a path (starting with
+.BR / ,
+.BR ~ ,
+.B ./
+or
+.BR ../ )
+or a directory holding
+.BR .git ;
+otherwise it is the repository of the active pane (for the subcommand, of the current directory).
+.I base
+is a branch of
+.BR origin :
+the argument, else
+.BR worktree\-base ,
+else
+.BR origin/HEAD ,
+else the first of main, master, develop, trunk.
+.PP
+imux runs
+.B git fetch origin
+(on failure a warning, and the last known
+.B origin/BASE
+is used) and
+.B "git worktree add"
+on a helper thread, so other panes stay responsive; the answer is a status message, or the
+subcommand's output.
+An existing worktree of the repository at that directory is reused.
+.PP
+The window is named
+.IR repo : name
+and holds the panes of
+.BR worktree\-layout :
+.B claude
+and
+.B shell
+joined by
+.B |
+(side by side) and
+.B /
+(stacked), such as
+.BR "claude|shell/shell" .
+A
+.B claude
+pane runs
+.B worktree\-command
+(empty by default: a plain shell).
+.B worktree\-start
+(or
+.BR \-\-start ),
+if not empty, is passed to that program as one quoted word; it needs
+.B worktree\-command
+and is not passed for a reused worktree.
+In it
+.BR #{repo} ,
+.BR #{name} ,
+.BR #{branch} ,
+.B #{base}
+and
+.B #{path}
+are replaced.
+.PP
+.B worktree\-setup
+(or
+.BR \-\-setup ;
+.B \-\-no\-setup
+turns it off for one call) is a shell command typed into the
+.B claude
+pane before the program, for what a checkout needs
+.RB ( "set worktree\-setup \(dqnpm ci\(dq" ).
+The two are chained, in the syntax of the pane's shell, so that the program starts only if the
+setup succeeded:
+.B &&
+in sh, bash and zsh,
+.B "; and"
+in fish, and an
+.B if
+on the exit status in nushell and PowerShell.
+On failure the shell stays at its prompt.
+Without
+.B worktree\-command
+the setup is typed alone.
+It runs in the new worktree, and not for a reused one unless
+.B \-\-setup
+was given.
+.PP
+The setup is typed as written (it is your own shell text), but in it
+.BR #{repo} ,
+.BR #{name} ,
+.BR #{branch} ,
+.B #{base}
+and
+.B #{path}
+are replaced by the value quoted for the shell, never raw (a branch name may hold
+.BR $ ,
+.B ;
+or backticks).
+Other
+.B #{...}
+and control characters are refused with a reason.
+The shell is told from its name (see
+.B default\-shell
+and
+.BR shell\-syntax );
+for an unknown shell, nothing that needs quoting or chaining is typed, and the answer says so.
+The window is saved and restored like any other (see
+.BR PERSISTENCE ).
+.PP
+.B worktree\-remove
+(also
+.BR "imux worktree\-remove" ;
+no key) removes a worktree with
+.B "git worktree remove"
+and closes its window.
+With a
+.I name
+it is the worktree placed by
+.BR worktree\-path ;
+without, it is that of the current window (for the subcommand, the one containing the current
+directory).
+It always refuses the main checkout, a path that is not a worktree of the repository, and a locked
+worktree.
+Without
+.B \-\-force
+it also refuses changed or untracked files and commits on no remote
+(counted with
+.BR "git rev-list HEAD \-\-not \-\-remotes" ,
+so detached worktrees and branches without an upstream are covered); the answer says which.
+The branch is never deleted, imux itself never deletes a directory (git does), and the last window
+of the server stays open.
+.PP
+In the status line options, these variables describe the window's worktree and are empty for other
+windows:
+.BR #{worktree_name} ,
+.B #{worktree_branch}
+(empty when detached),
+.B #{worktree_repo}
+(the repository's directory name) and
+.BR #{worktree_path} .
+A window's own tab describes that window, the left and right parts the current one, for example
+.BR "set window\-status\-format \(dq #I:#{worktree_name} \(dq" .
+They also work in
+.BR "imux display\-message \-p" ,
+.BR "imux list\-windows \-F" ,
+the other formats of a shell command, and the variables of hooks and plugins; there they describe
+the window of the target.
+Like every value that a repository or a program can influence, they are refused in the text of
+.BR run\-shell ,
+.B if\-shell
+and
+.B #(command)
+unless written
+.BR #{q:name} .
+.PP
+.B worktree\-branch\-format
+is the branch name template, with
+.B #{name}
+and
+.BR #{slug} ;
+it must contain
+.B #{name}
+and give a valid ref name.
+.B #{slug}
+is the optional description from
+.B \-\-slug
+(or the second word of the wizard prompt), empty if none; a
+.BR \- ,
+.B _
+or
+.B .
+left at the end because of that is dropped.
+The directory is always the bare
+.IR name .
+.PP
+.RS
+.nf
+set worktree\-branch\-format "#{name}"                   # ABC\-1  (default)
+set worktree\-branch\-format "feature/#{name}"           # feature/ABC\-1
+set worktree\-branch\-format "feature/#{name}\-#{slug}"   # feature/ABC\-1\-login\-fix
+                                                       # (feature/ABC\-1 without a slug)
+set worktree\-detach on                                # no branch; a skill makes it
+.fi
+.RE
+.PP
+.B repo\-wizard
+(bound to
+.BR W )
+lists the repositories one level below
+.B repos\-dir
+(default
+.BR ~ ):
+visible subdirectories that hold
+.BR .git .
+Choose with the arrow keys or
+.B j
+and
+.BR k ,
+Enter, or a click;
+.B q
+or Escape cancels.
+A prompt asks for the worktree name and optionally a slug, separated by a space, and runs
+.B worktree
+there with the base from
+.BR worktree\-base .
+.SH PERSISTENCE
+.B imux
+keeps the layout of its sessions across a server restart, a reboot or a crash, without a plugin.
+Saved, per session: its windows and their names, the splits of each window with their sizes, and
+which window and pane were active; per pane: its working directory and the foreground program.
+Scrollback, images and program state are not saved.
+.PP
+The server writes an autosave every
+.B autosave\-interval
+seconds (default 300, 0 turns it off) while something has changed, and once more on SIGTERM.
+The next server restores it when its first client attaches
+.RB ( restore\-on\-start ,
+on by default).
+Sessions return with fresh shells in the saved directories, and
+.B imux new \-s
+.I name
+joins a restored session of that name instead of failing.
+A directory that is gone becomes the home directory: a message names it once, the autosave keeps the
+saved path until the pane leaves the home directory, and
+.B #{pane_restore_missing}
+is 1 meanwhile.
+The autosave is removed when the server ends on purpose
+.RB ( "imux kill\-server" ,
+or the last pane of the last session closing) and stays after SIGTERM, SIGHUP, a crash or a reboot.
+.PP
+A pane that ran a program starts it again only if its name is in
+.BR restore\-commands :
+the saved command line is typed into the new shell, each word quoted in that shell's syntax (see
+.BR shell\-syntax ;
+for a shell imux cannot quote for, nothing is typed), and a program with control characters in its
+arguments is never started.
+Other programs leave a plain shell.
+Only a listed program has its arguments written to the snapshot; for any other the file holds the
+name alone, because command lines often carry secrets
+.RB ( "mysql \-pSECRET" ,
+tokens in headers).
+.PP
+A program that runs inside another (a shell started in the pane, then
+.B vim
+in it, or
+.BR "nix develop" )
+is saved with the programs around it, up to four, outermost first.
+Restore types them in order, each as its own line.
+A plain shell
+.RB ( bash ,
+.BR zsh ,
+.BR fish ,
+without arguments) needs no entry in
+.B restore\-commands
+and is typed as its bare name, so the file cannot choose which file runs; anything else must be
+listed.
+If one of them may not be started, none is, and the pane gets a plain shell.
+A pane whose program was started by an agent is saved as an agent pane.
+.PP
+A pane that ran the agent program
+.RB ( claude )
+is resumed with
+.B claude \-\-continue
+when
+.B restore\-claude
+is on; that continues the most recent conversation of the directory, so two such panes in one
+directory resume the same one.
+The command is typed as soon as the shell starts, which relies on the shell keeping typed\-ahead
+input while it initializes.
+PowerShell throws it away, so there it is typed once the pane has been quiet for a moment (at most
+10 seconds).
+A PowerShell pane has no job control, so its program is the single child of the shell.
+.PP
+A program can say exactly how to come back:
+.B "imux pane report\-agent ... \-\- command"
+(see
+.BR "AGENT STATUS" ).
+The command is saved with the pane and, if it passes the checks again on load (a plain command
+name in
+.BR restore\-commands ,
+at most 64 arguments, no apostrophes or control characters), is typed instead of the guesses above.
+With a command, an agent resumes the pane's own conversation, not just the newest of the directory.
+A hook or wrapper of the agent can report it; imux never installs one.
+For example, run from a session start hook:
+.PP
+.RS
+.nf
+[ -n "$IMUX_PANE_ID" ] && imux pane report-agent --source my-hook --agent my-agent --state idle -- my-agent --resume ID
+.fi
+.RE
+.PP
+Persistence saves only the foreground program of a pane and the programs around it, and only their
+command lines as the system reports them: a program that rewrites its own arguments is restored
+with those.
+Pictures and scrollback are not saved.
+.PP
+Named snapshots are kept until deleted.
+No key is bound to these commands (use
+.BR bind );
+the
+.B imux
+subcommands print the server's answer and need a running server.
+.TP
+.BR save\-session " [\fIname\fP], " "imux save" " [\fIname\fP]"
+Write a named snapshot, or the autosave when no name is given.
+Names use letters, digits,
+.BR . ,
+.B _
+and
+.BR \- ,
+at most 64, not starting with a dot.
+.TP
+.BR restore\-session " [\fIname\fP], " "imux restore" " [\fIname\fP]"
+Add the sessions of a named snapshot, or of the autosave, to the running server.
+A session whose name is in use is left alone and counted in the reply.
+A client must have attached once, since the pane size comes from it.
+.TP
+.BR list\-snapshots ", " "imux snapshots"
+List the named snapshots.
+.TP
+.B "imux snapshots \-\-history"
+List the rolling copies of the autosave, newest first, as
+.IR history/NAME ,
+with their age and the sessions they hold.
+It reads the state directory and needs no server.
+Every
+.B autosave\-history\-interval
+seconds, when the autosave is written and its layout differs from the newest copy, a copy goes to
+.I snapshots/history/
+(mode 0600) and the oldest beyond
+.B autosave\-history
+go.
+They survive
+.B kill\-server
+and are never restored by themselves:
+.B "imux restore history/NAME"
+adds the sessions of one to the running server.
+.TP
+.BR delete\-snapshot " \fIname\fP, " "imux delete\-snapshot" " \fIname\fP"
+Remove a named snapshot.
+.SH AGENT STATUS
+Programs that report with
+.B "OSC 7501"
+(an agent does so once the pane answers its query) show up in the status line and in the session and
+window pickers.
+A pane is
+.BR working ,
+.B blocked
+(waiting for the user; the agent says why, for example a permission prompt),
+.B done
+(finished a piece of work), in
+.BR error ,
+or idle.
+A window shows the most urgent state of its panes, and a session or the whole server likewise, in
+the order blocked, error, working, done, idle.
+.B done
+and
+.B error
+count per client until it has had the pane in front of it (the active pane of the window it looks
+at); then the pane is idle for that client.
+A
+.B working
+under 150 milliseconds is shown as the state before it, because some agents send one between a
+denied permission or an Esc and its final
+.BR idle .
+.PP
+There is no fixed place for the symbols; put these format variables where you want them, for
+example in
+.B status\-right
+and
+.BR window\-status\-format :
+.TP
+.B #{window_agent_glyph}
+the glyph of the window being drawn (nothing when idle)
+.TP
+.B #{window_agent_state}
+its state as a word, empty without a report
+.TP
+.B #{agent_glyph}
+the glyph of the most urgent state anywhere
+.TP
+.B #{agent_state}
+that state as a word
+.TP
+.B #{agent_count}
+how many panes are in it, empty when one or none
+.PP
+The glyphs are the options
+.BR agent\-glyph\-working ,
+.BR agent\-glyph\-blocked ,
+.B agent\-glyph\-done
+and
+.B agent\-glyph\-error
+(Nerd Font hourglass, circle\-slash, check\-circle and circle\-slash; set plain text such as
+.B !
+if the font lacks them), drawn in
+.BR agent\-style\-working ,
+.BR agent\-style\-blocked ,
+.B agent\-style\-done
+or
+.BR agent\-style\-error .
+After a glyph the style returns to the status line's own, not to what an earlier
+.B #[...]
+had set.
+A click on a glyph in the right part of the status line opens the agent panel.
+.PP
+.RS
+.nf
+set status\-right "#{agent_glyph}#{agent_count} %H:%M"
+set window\-status\-format " #I#{window_agent_glyph} #W "
+set agent\-glyph\-blocked "!"
+.fi
+.RE
+.PP
+Programs that do not speak
+.B "OSC 7501"
+can report over the socket.
+Every pane's environment has
+.B IMUX_ENV
+(1),
+.B IMUX_PANE_ID
+and
+.BR IMUX_SOCKET_PATH .
+.TP
+.B "imux pane report\-agent [pane] \-\-source s \-\-agent a \-\-state st"
+.TQ
+.B "[\-\-seq n] [\-\-message text] [\-\- resume command]"
+Set the pane's record: state
+.BR idle ,
+.BR working ,
+.BR done ,
+.B blocked
+or
+.BR error ,
+the agent's name (shown as the application) and a message.
+The pane defaults to
+.BR $IMUX_PANE_ID .
+.B \-\-source
+names the integration (letters, digits and
+.BR :._\- ,
+at most 80; not
+.B osc
+or starting with
+.BR imux: ).
+.B \-\-seq
+must rise with every report of a source (a time stamp does well and is the default); a report not
+higher than the last of that source is acknowledged and ignored, so late reports cannot undo newer
+ones.
+It only works from a process running inside the pane it names (checked through the process at the
+other end of the socket), else it is refused.
+.TP
+.B "\-\- command"
+At the end of a report, names the command that brings the program back after a restart.
+It must start with a plain command name listed in
+.BR restore\-commands ,
+have at most 64 arguments and 8 KiB, and none may hold an apostrophe or a control character.
+It lives as long as the program: it is dropped when the pane's foreground process is the shell
+again.
+.TP
+.B "imux pane release\-agent [pane] \-\-source s"
+Clear the record, if that source wrote it.
+.TP
+.B "imux agent list [\-\-json]"
+One line per pane with a record: pane number, session and window, state, name and message.
+.TP
+.B "imux agent get [pane | \-\-current] [\-\-json]"
+All fields of one pane's record: the state, who reported it, the program, its kind and progress
+when blocked or working, the message, how long ago the state changed, whether a client has looked
+at the pane since
+.RB ( seen ),
+the highest accepted
+.B \-\-seq
+of each source, and the resume command.
+A pane without a record says whether nothing has reported on it or its source released it.
+Without a pane, a program in a pane means its own pane
+.RB ( $IMUX_PANE_ID ,
+which
+.B \-\-current
+also says).
+.TP
+.B "imux agent wait [pane | \-\-current] [\-\-until states] [\-\-timeout seconds] [\-\-json]"
+Wait until the pane's agent is in one of the states (comma separated; default anything but
+.BR working ),
+print it and exit.
+It returns at once if the agent already is; it fails if the agent exits, another one takes the pane,
+the pane closes, or the timeout (seconds, default none) passes.
+.TP
+.B "imux agent prompt pane [\-\-wait] [\-\-timeout seconds] [\-\-json] [\-\-] text..."
+Type the text into the pane of an agent and press Enter.
+It is typed as a paste (inside the paste markers when the program there asked for them, line
+breaks as Enter, no escape or other control character), at most 8 KiB; the text
+.B \-
+is read from the standard input.
+Off unless
+.B agent\-control
+is on.
+Refused when the pane has no agent record, is dead, or the agent is
+.B blocked
+(the text would be taken as the answer to its question).
+A program in a pane may only do it when
+.B command\-from\-panes
+is on too, or is
+.B spawned
+(the default) and the pane is one it spawned.
+Flags go before the text: after it, everything is text (so is
+.BR \-\-json ).
+Keys other than text are sent with
+.BR "imux send-keys" .
+.IP
+Without
+.B \-\-wait
+it prints
+.B sent
+and exits.
+With it, it waits until the agent has gone through a turn: it returns the first state the agent
+reaches after the text was typed that is not
+.B working
+(like
+.BR "agent wait" ),
+or fails at the timeout (seconds, default none, counted from the typing, so it covers both) or
+when the agent exits or another program takes the pane.
+A settled state counts only once the agent was seen
+.B working
+or
+.B blocked
+after the text (or was working when the text came);
+.B blocked
+and
+.B error
+answer at once, and an
+.B idle
+or
+.B done
+that began after the text without that does not.
+An agent that shows neither within
+.B agent\-stall\-time
+seconds (5) of the text fails the call with
+.IR prompt_stalled .
+A stall or a timeout does not show that the text was not delivered: read the pane
+.RB ( "agent read" )
+before typing it again.
+A settled state is not the end of a task: an agent that was already working ends the wait with the
+turn that was running.
+Use it on an agent that is idle or done; typed into a working one, the text is queued by the
+program.
+.TP
+.B "imux agent name pane (name | \-\-clear) [\-\-json]"
+Give the agent in a pane a name, or with
+.B \-\-clear
+take it off.
+A name is a lowercase letter, then lowercase letters, digits,
+.B _
+and
+.BR \- ,
+at most 32.
+It is unique among the panes that have a record, and belongs to the record: it is gone when the
+program releases or ends it, and when another program takes the pane; a new state of the same
+program keeps it.
+Wherever a pane is taken by
+.BR "agent get" ,
+.BR wait ,
+.BR prompt ,
+.B read
+and
+.BR name ,
+a name works too, and so does
+.BI agent: name
+as the target of any command
+.RB ( "send\-keys \-t agent:reviewer" ).
+A name that matches nothing is
+.IR not_found .
+The name shows in
+.BR "agent list" ,
+.BR "agent get" ,
+the agent panel,
+.B #{agent_name}
+and the event
+.BR agent\-state\-changed ,
+and a snapshot keeps it: a restored pane gets it back with the first record its program reports
+(if no other agent has it by then).
+A program in a pane may name the agent in its own pane and in a pane it spawned (see
+.BR "Who may run commands" ).
+Underneath it is the socket command
+.BR "api\-agent\-name pane name" ,
+which a plugin may run with
+.BR windows ;
+.B "api\-agent\-resolve name"
+(look only) turns a name into a pane number.
+.TP
+.B "imux agent start name [\-\-kind kind] [\-\-pane pane] [\-\-timeout ms] [\-\-json] [\-\- arg...]"
+Start an agent program in a pane that is at its shell prompt, give it
+.IR name ,
+and wait until it reports.
+Needs
+.B agent\-control
+on.
+The command typed is never the caller's: without
+.B \-\-kind
+it is the option
+.B worktree\-command
+(an error while that is empty), and with one it is the program the option
+.B agent\-kind
+lists for that kind, which must also be in
+.BR restore\-commands .
+The words after
+.B \-\-
+are added as arguments, each quoted for the pane's shell (at most 64, 8 KiB, no control
+characters; not for a shell imux cannot quote for).
+The pane is given with
+.B \-\-pane
+(a number,
+.BI % id
+or any target; without it, the active pane for you at the keyboard, required from inside a pane) and
+must have a shell in the foreground, no agent record, and be alive, else the answer is
+.IR not_ready ;
+the pane that asks is never the target.
+.IP
+Ready is the first report of state
+.B idle
+(or
+.BR done )
+from the program, by OSC 7501 or
+.BR "imux pane report-agent" ;
+imux does not read the screen.
+The wait is
+.B \-\-timeout
+milliseconds (3000 to 300000, default 30000).
+A program that reports
+.B blocked
+ends the wait at once with
+.I not_ready
+and keeps its name; one that reports nothing in time ends it with
+.IR timeout ,
+and the name is not kept.
+A client that goes away ends only the wait: the program keeps running and its first report
+gives it the name.
+It prints
+.B "ready %id"
+and with
+.B \-\-json
+.BR {"pane","name","state"} .
+A program in a pane may only start an agent in a pane it spawned (see
+.BR "Who may run commands" ).
+Underneath it is the socket command
+.BR "api\-agent\-start name kind pane timeout_ms [arg...]" ,
+and a plugin needs
+.BR windows .
+Flags go before the
+.BR \-\- .
+.TP
+.B "imux agent read pane [\-\-lines n] [\-\-ansi] [\-\-json]"
+Print the recent text of a pane: its last
+.I n
+lines (1 to 10000, default 100), history included, wrapped lines joined, the empty rows that end the
+screen left out.
+The pane needs no agent record.
+The text is plain; with
+.B \-\-ansi
+the colors and attributes stay as escape sequences.
+A program in a pane may read its own pane and, at
+.B spawned
+or
+.BR on ,
+the panes it spawned (underneath it is
+.BR capture\-pane ,
+with the same rules).
+.TP
+.B "imux pane run pane [\-\-json] [\-\-] text..."
+Type a line into any pane and press Enter, as
+.B "agent prompt"
+does, with no agent needed: the text is typed as a paste (inside the paste markers when the program
+there asked for them, line breaks as Enter, no escape or other control character), at most 8 KiB;
+the text
+.B \-
+is read from the standard input.
+It prints
+.B sent
+once the bytes are written, which does not mean the program has run them.
+Calls are written in the order they are made.
+A pane that has an agent record is typed into only when
+.B agent\-control
+is on, and not while the agent is
+.BR blocked ;
+a dead pane is refused.
+A program in a pane may only do it, like
+.BR send\-keys ,
+in a pane it spawned (see
+.BR "Who may run commands" ).
+Underneath it is the socket command
+.BR "api\-pane\-run pane text" ,
+and a plugin needs
+.BR send\-keys .
+Flags go before the text.
+.TP
+.B "imux pane wait\-output pane (\-\-match text | \-\-regex re) [\-\-source s] [\-\-lines n] [\-\-timeout ms] [\-\-json]"
+Wait until the pane shows a line that holds the text, or that the regular expression matches, and
+print that line (the first such line).
+What the pane shows now is looked at first, so a line that is already there ends the wait at once.
+.B \-\-source
+is
+.B recent
+(the default: the screen and
+.B \-\-lines
+lines of history above it, 100 by default, up to 10000) or
+.B visible
+(the screen only).
+Wrapped rows are joined, colors and attributes are left out, and a regular expression is matched
+against one line at a time (the syntax of
+.BR regex\-lite :
+no backreferences or look-around; at most 512 bytes, as is the text).
+.B \-\-timeout
+is in milliseconds; without it the wait lasts until the line comes, the pane closes
+.RI ( not_found ),
+its program has ended in a pane kept by
+.B remain\-on\-exit
+.RI ( not_ready ),
+or the caller goes away (a wait whose client left is dropped at once).
+The server holds at most 64 waits, and 8 for one caller (a pane, or you and everything outside a
+pane); over that the command fails with
+.IR "limit reached" .
+Nothing polls: a wait looks at its pane again only when the pane printed something.
+With
+.B \-\-json
+the answer is
+.B {"pane":"%3","line":"...","text":"..."}
+with the text that was searched.
+A program in a pane may wait on its own pane and, at
+.B spawned
+or
+.BR on ,
+on the panes it spawned.
+Underneath it is the socket command
+.B "api\-pane\-wait"
+(it never runs from a key), and a plugin needs
+.BR read\-panes .
+.SS JSON output
+.B \-\-json
+on
+.BR "agent list" ,
+.BR "agent get" ,
+.BR "agent wait" ,
+.BR "agent prompt" ,
+.BR "agent read" ,
+.B "pane run"
+and
+.B "pane wait\-output"
+prints one JSON value on the standard output instead of the text: an array of records for
+.BR list ,
+a record for
+.BR get ,
+.B {"pane":"%3","state":"idle"}
+for
+.BR wait ,
+.B {"pane":"%3","sent":true}
+for
+.B prompt
+and
+.B pane run
+(with
+.B \-\-wait
+also
+.BR state ),
+.B {"pane":"%3","lines":100,"text":"..."}
+for
+.BR read ,
+and
+.B {"pane":"%3","line":"...","text":"..."}
+for
+.BR wait\-output .
+A record has the names the events use (\fBsession\fR, \fBwindow\fR, \fBpane\fR, \fBstate\fR,
+\fBmessage\fR), ids as strings
+.RB ( $1 ,
+.BR @2 ,
+.BR %3 ),
+and leaves out what it does not have
+(\fBagent\fR is the program, \fBname\fR the name given with \fBagent name\fR).
+.PP
+An error with
+.B \-\-json
+is
+.B {"error":{"code":"...","message":"..."}}
+on the standard error with exit status 1; the standard output stays empty.
+Without
+.B \-\-json
+the message is the same text, with no code.
+Words that are wrong exit with status 2 in every mode, with the reason and the usage on the standard
+output.
+The codes are
+.BR not_found ,
+.BR ambiguous_target ,
+.BR invalid_argument ,
+.B permission_denied
+(the message names the option that allows it),
+.B limit_reached
+(it names the option that limits),
+.BR timeout ,
+.BR agent_blocked ,
+.BR agent_not_running ,
+.BR prompt_stalled ,
+.BR invalid_regex ,
+.BR not_ready ,
+.B server_unavailable
+(no server runs) and
+.B protocol_mismatch
+(see
+.BR "imux doctor" ).
+.B "imux api schema"
+prints these codes and the fields above as one line of JSON, for a tool that wants to check what
+it reads.
+.PP
+The two server commands behind the JSON of
+.B list
+and
+.BR get ,
+.B api\-agent\-list
+and
+.B "api\-agent\-get pane"
+(run as words, like any command), look only: a program in a pane may run them at every
+.BR command\-from\-panes ;
+a plugin needs
+.B read\-panes
+for the second.
+.SH AGENT PANEL
+.B agent\-panel
+(bound to
+.BR A )
+lists every pane with a status report: glyph, name, message and time since the state changed.
+An agent given a name with
+.B "agent name"
+shows it in place of the window's.
+A window made by
+.B worktree
+is named by its ticket; windows with several agent panes get
+.BR .1 ,
+.BR .2 ...,
+and with several sessions the session name goes in front.
+The message is what the program sent (for example,
+.IR "approve Bash: touch x" )
+or else a plain word.
+The last lines of the selected pane show below the list (beside it in the full view on a wide
+terminal).
+.PP
+Keys:
+.B j
+and
+.BR k ,
+the arrow keys, Page Up and Down,
+.B g
+and
+.B G
+move; Enter jumps to the pane (its session, window and focus);
+.B q
+or Escape closes.
+.B /
+filters the rows by the name and message of each (the same keys as in the pickers; the query is
+shown after the title of the full view and of a docked panel on the side).
+The wheel moves the selection; a click outside the box closes it.
+With
+.B agent\-panel\-jump
+.B click
+one click on a row jumps; with
+.B doubleclick
+a click only selects (and previews), and a second click on the row, or Enter, jumps.
+Without any reports a message says so.
+.PP
+With
+.B "agent\-panel dock"
+the list stays on one edge for every window and session and the panes make room for it (they are
+resized when it opens and closes; it is not shown if the panes would get under 20 columns or 5 rows).
+.B A
+shows it and gives it the keyboard, with the same keys except that Escape and
+.B q
+only hand the keyboard back, and Enter jumps and does so too.
+.B A
+in the focused dock hides it; while it is shown but unfocused,
+.B A
+focuses it.
+A click on a row jumps (with
+.BR doubleclick ,
+it focuses the dock on that row).
+The dock shows no preview.
+.PP
+Options:
+.TP
+.B agent\-panel
+.B overlay
+(a box over the panes, default),
+.B full
+(the whole screen) or
+.B dock
+.TP
+.B agent\-dock\-position
+.TQ
+.B agent\-dock\-width
+.TQ
+.B agent\-dock\-height
+edge
+.RB ( left ,
+.BR right ,
+.B top
+or
+.BR bottom ;
+default right) and thickness: columns for left and right (32), rows for top and bottom (8)
+.TP
+.B agent\-overlay\-width
+.TQ
+.B agent\-overlay\-height
+size of the overlay in percent of the screen (70 and 60)
+.TP
+.B agent\-panel\-preview
+.TQ
+.B agent\-panel\-preview\-lines
+whether to show the selected pane's last lines, and how many rows (8)
+.TP
+.B agent\-panel\-sort
+.B state
+(blocked first, then error, working, done, idle; newest first within a state; default),
+.B recent
+or
+.B order
+(session, window and pane order)
+.SH HOOKS
+A hook is an imux command line that runs when something happens.
+.TP
+.BR set\-hook " [" \-agpRuw "] \fIname\fP[\fIslot\fP] [\fIcommand\fP]"
+Set what runs for the event
+.IR name .
+.I command
+is a command line like those of a key binding (several commands are separated with
+.BR \e; ),
+often
+.BR run\-shell .
+A hook is a list of at most 16 commands, numbered from 0, run in order.
+Without a slot,
+.B set\-hook
+replaces the whole list with
+.IR command ;
+.B \-a
+adds it at the end; with a slot (\fBset\-hook pane\-exited[2] ...\fP) only that one is set.
+.B \-u
+removes the hook or, with a slot, that one command.
+.B \-R
+runs the hook now, without event variables.
+The scope flags
+.BR \-g ,
+.B \-w
+and
+.B \-p
+are accepted and mean the same thing: imux has one scope.
+At most 64 hooks can be set, each command at most 4096 bytes.
+A name must be lowercase letters, digits and
+.BR \- .
+A name imux does not know is kept and reported once in the log, so that a configuration written for
+another program loads.
+.TP
+.BR show\-hooks " [" \-g ]
+List the hooks, one line per command:
+.IR name [ slot "] " command .
+It works at the prompt and from a shell.
+.PP
+A hook may be set in a configuration file, bound to a key, typed at the prompt or given from a shell
+(\fBimux set\-hook ...\fP); the last way is subject to
+.B command\-from\-panes
+like every command that changes the setup.
+.SS Events
+Every command has an event
+.BI after\- command
+(\fBafter\-new\-window\fP, \fBafter\-split\-window\fP, \fBafter\-set\-option\fP,
+\fBafter\-bind\-key\fP, ...), which fires once the command has finished, whether it came from a key,
+the prompt or a shell.
+The words of the command are in
+.BR #{hook_argument_0} ,
+.B #{hook_argument_1}
+and so on (at most ten) and its name in
+.BR #{hook_command} .
+.PP
+The other events are:
+.TP
+.BR session\-created ", " session\-closed ", " session\-renamed ", " session\-window\-changed
+.TQ
+.BR window\-linked ", " window\-unlinked ", " window\-renamed ", " window\-layout\-changed ", " window\-pane\-changed
+.TQ
+.BR pane\-exited ", " pane\-title\-changed ", " pane\-mode\-changed
+.TQ
+.BR client\-attached ", " client\-detached ", " client\-resized ", " client\-session\-changed
+These fire when the state shows the change at the end of a pass of the server, so one event can
+stand for several changes made together.
+A window is linked when it is created and unlinked when it closes (imux does not link a window into
+several sessions).
+.B pane\-mode\-changed
+is copy mode starting or ending.
+.TP
+.B pane\-died
+The program of a pane ended and
+.B remain\-on\-exit
+kept the pane.
+.B #{hook_exit_status}
+is its exit status (128 and the number of the signal if a signal ended it).
+A pane that goes away instead fires
+.BR pane\-exited .
+.TP
+.BR client\-focus\-in ", " client\-focus\-out
+The terminal window of a client gained or lost the keyboard focus (needs
+.BR focus\-events ).
+.TP
+.BR pane\-focus\-in ", " pane\-focus\-out
+A pane became or stopped being the active pane of the current window of its session (needs
+.BR focus\-events ).
+Changing the window counts.
+.TP
+.B command\-error
+A command failed.
+.B #{hook_message}
+is the text the user was told.
+.TP
+.B agent\-state\-changed
+The agent in a pane changed state or message.
+.B #{hook_state}
+is
+.BR idle ", " working ", " blocked ", " done " or " error ,
+or empty when the agent is gone, and
+.B #{hook_name}
+is the name given with
+.B "agent name"
+(the event also fires when the name changes; the event stream has it as
+.BR name ).
+.TP
+.BR worktree\-created ", " worktree\-removed
+A worktree was opened or removed.
+.B #{hook_path}
+and
+.B #{hook_branch}
+tell which.
+.TP
+.BR alert\-activity ", " alert\-bell ", " alert\-silence
+A window that nobody views got an activity, a bell or a silence flag (see
+.BR monitor\-activity ,
+.B monitor\-bell
+and
+.BR monitor\-silence ).
+Fires once when the flag appears, not again while it stays.
+.B #{hook_pane}
+is the pane that caused it.
+.PP
+These names are accepted but nothing fires them yet:
+.BR pane\-set\-clipboard ,
+.B client\-light\-theme
+and
+.BR client\-dark\-theme .
+.SS Variables
+Inside a hook command these formats are set, as far as the event has them:
+.BR #{hook} " (the event name),"
+.BR #{hook_client} ,
+.BR #{hook_session} " (" $N ),
+.BR #{hook_session_name} ,
+.BR #{hook_window} " (" @N ),
+.BR #{hook_window_name} ,
+.BR #{hook_pane} " (" %N ),
+.BR #{hook_state} ,
+.BR #{hook_exit_status} ,
+.BR #{hook_message} ,
+.BR #{hook_path} ,
+.BR #{hook_branch} ,
+.B #{hook_command}
+and
+.BR #{hook_argument_0} ...
+Control characters are removed from the values and they are cut to 256 characters.
+.PP
+Names, titles and messages can be set by a program in a pane.
+Like the other such formats, they are refused in the text of
+.BR run\-shell " and " if\-shell
+(see above): write
+.BI #{q: name }
+or read the environment, where every variable is set as
+.B $IMUX_HOOK_WINDOW_NAME
+and so on.
+Ids,
+.B #{hook_state}
+and
+.B #{hook_exit_status}
+need no quoting.
+A hook command is read again when the hook runs, so a
+.B $NAME
+in double quotes is a configuration variable and is replaced then: write the environment
+variable in single quotes and escape its dollar sign:
+.br
+\fBset\-hook window\-renamed "run\-shell 'echo \e$IMUX_HOOK_WINDOW_NAME'"\fP
+.SS Limits
+A hook started by a hook may start a third one and no more; the rest is dropped and logged.
+An event fires at most 20 times a second (the rest is dropped and logged), and at most 50 hook
+commands run in one pass of the server (the others wait for the next), so a hook that changes what
+it listens to cannot make the server spin.
+A command that fails is logged and the hook is kept.
+A hook runs after the change that caused it, never inside it.
+.SS Notifications
+To be told when an agent is blocked or done in a pane you are not looking at, run a script from
+.BR agent\-state\-changed :
+.PP
+.nf
+.RS
+set\-hook \-g agent\-state\-changed "run\-shell \-b '/path/to/notify\-agent.sh'"
+.RE
+.fi
+.PP
+The script
+.I examples/notify\-agent.sh
+of the source tree is one that works.
+The hook command is only the name of the script: the state and the pane arrive in the environment
+.RB ( $IMUX_HOOK_STATE ,
+.BR $IMUX_HOOK_PANE ),
+because
+.B #{hook_message}
+and the names are written by programs in panes and so are refused in the text of a command (use
+.BI #{q: name }
+only where the shell reading it is meant to see data).
+The script asks the server, through the
+.B tmux
+name every
+.B run\-shell
+job has while
+.B tmux\-compat
+is on, whether the pane is looked at
+.RB ( #{window_active} ,
+.BR #{pane_active} ,
+.BR #{session_attached} ),
+and shows the notification with
+.B terminal\-notifier
+or
+.B osascript
+with the text as arguments, never inside the code.
+.B IMUX_NOTIFY_CMD
+names a program to run instead; it gets the title and the text as its two arguments.
+.SH EVENTS
+.B imux events
+keeps a connection open and prints one line of JSON for each event, as it happens, until it is
+stopped or the server ends.
+It is for scripts and other programs that would otherwise poll; the events are those of
+.BR HOOKS ,
+with the same names and variables.
+.PP
+.nf
+{"event":"window\-renamed","seq":12,"time":1731160000000,"session":"$1","window":"@3","window_name":"build"}
+.fi
+.PP
+.B event
+is the name,
+.B seq
+counts up from 1 over the life of the server (a gap means the reader was not given everything),
+.B time
+is milliseconds since 1970, and the rest are the variables of the event without the prefix
+.B hook_
+(so
+.B #{hook_window_name}
+is
+.BR window_name ),
+all strings.
+The values have no control characters and at most 256 characters, but a program in a pane can
+choose them (names, titles, agent messages): a reader must treat them as text, never as a command.
+.PP
+The first line is
+.B {"event":"subscribed","api":1,"seq":N}
+so that a reader knows when it is connected.
+.B \-\-types
+names the events wanted, separated by commas (and may be repeated); an unknown name is refused.
+Without it, all events but the
+.BI after\- command
+ones are sent; those are sent only when asked for by name.
+.PP
+.B \-\-wait
+.I event
+prints the first event of that name and exits with status 0, nothing else.
+With
+.BI \-\-match " key=value"
+(repeatable) the event must also have those fields, and with
+.BI \-\-timeout " ms"
+no such event in that time is an error (status 1).
+It cannot be combined with
+.BR \-\-types .
+.PP
+Waiting for what a command caused has no race when the number is noted first.
+The
+.B \-\-json
+result of
+.BR "agent prompt" ,
+.BR "agent name" ,
+.B "agent start"
+and
+.B "pane run"
+ends with
+.BR seq ,
+the number of the last event before the change (the socket command
+.B api\-seq
+prints it), and
+.BI \-\-since " seq"
+first sends the events kept after that number: the last 512, those of the types asked for.
+Once anything has asked for a number (a subscription,
+.BR api\-seq ,
+such a
+.B \-\-json
+result), the server counts and keeps every event but the
+.BI after\- command
+ones, whether anyone is connected or not; before that it counts none.
+If some of the events after the number are gone, or the number is from another server's life, the
+reader gets
+.B {"event":"events_lost"}
+and
+.B imux events
+exits with status 1: read the state again.
+.PP
+Events say that something changed; they are not a log.
+A reader that does not keep up (more than 64 KiB, about 500 events, waiting) is sent
+.B {"event":"events_lost"}
+and disconnected, and
+.B imux events
+exits with status 1: read the state again (for example
+.BR "agent list" ,
+.BR list\-windows )
+and subscribe again.
+.PP
+.B imux api schema
+prints the fields and error codes of the JSON output.
+.B imux api version
+prints
+.BR api=1 ,
+the version of this interface (the events, their names and variables, and the
+.B agent
+commands).
+Additions keep the number; a change that could break a script raises it.
+.SH PLUGINS
+A plugin is a program that imux starts with the server, keeps running, and lets use the same
+interface as scripts: the events (see
+.BR EVENTS ),
+the
+.B agent
+commands and
+.BI "imux " command
+(see
+.BR COMMANDS ),
+with the rights its manifest asks for.
+A plugin is a directory the user put there; there is no download and no install from an address.
+The source tree holds three working examples under
+\fIexamples/plugins/\fP: a notification when an agent is blocked, window names from worktrees, and a
+status segment with the git branch.
+.PP
+The directory holds a manifest, \fIplugin.conf\fP, written like the configuration file, and the
+program:
+.PP
+.nf
+name notify\-blocked
+version 1
+api 1
+exec ./run.sh
+events agent\-state\-changed
+permissions read\-panes
+restart on\-failure
+.fi
+.TP
+.B name
+Letters, digits, and the characters . _ \- (at most 32); the name of the link and of the files.
+.TP
+.B api
+The version of the interface (see
+.BR "imux api version" ).
+A plugin for another version is refused.
+.TP
+.B exec
+The program, a path inside the directory (not absolute, no
+.BR .. ),
+and its arguments.
+It runs in the plugin directory.
+.TP
+.B events
+The events it may follow with
+.BR "imux events" ;
+without them it may not follow any.
+.TP
+.B permissions
+What else it may do (below).
+Without them it may follow its events, run commands that only look
+.RB ( list\-windows ,
+.BR display\-message ,
+.BR has\-session ,
+.BR wait\-for ,
+\&...), and use
+.B "agent list"
+and
+.BR "agent wait" .
+.TP
+.B restart
+.B on\-failure
+(default): start it again when it ends with a failure; a clean exit is left alone.
+.B never
+leaves it.
+.PP
+Permissions:
+.TP
+.B read\-panes
+.BR capture\-pane ,
+.B "agent get"
+and
+.BR "pane wait\-output" .
+.TP
+.B send\-keys
+.B send\-keys
+and
+.BR "pane run" .
+.TP
+.B set\-options
+.BR set\-option ,
+.BR set\-window\-option ,
+.BR bind\-key ,
+.BR unbind\-key ,
+.BR set\-hook ,
+.BR source\-file ,
+.BR set\-environment .
+A hook or a binding runs commands, so this reaches further than it sounds.
+.TP
+.B agent\-control
+.BR "agent prompt" ;
+the option
+.B agent\-control
+has to be on too.
+.TP
+.B windows
+Every other command on sessions, windows and panes: create, close, rename, select, respawn,
+join, and start programs in them.
+.PP
+A plugin never gets
+.BR run\-shell ,
+.BR if\-shell ,
+.BR pipe\-pane ,
+attaching, typing as a client,
+.BR kill\-server ,
+saving and restoring, worktrees, or reporting as a pane; a refused request fails with a message
+that names the permission.
+The permissions keep a plugin from using the socket for more than it needs, so that a mistake in
+a script cannot type into every pane.
+They are not a sandbox: a linked plugin is a program the user chose to run, with the user's rights,
+and one that means harm can do what the user's account can do, including leaving the process
+tree that lets imux recognize it.
+.PP
+The server runs the program in a process group of its own, with no standard input, its output
+appended to \fIplugins/NAME.log\fP in the state directory (cut at 1 MiB, one older generation kept
+as \fI.log.1\fP) and an environment of
+.BR PATH ,
+.BR HOME ,
+.BR USER ,
+.BR LOGNAME ,
+.BR SHELL ,
+.BR LANG ,
+.BR LC_ALL ,
+.BR LC_CTYPE ,
+.BR TMPDIR ,
+.BR TERM ,
+.B IMUX_PLUGIN
+(its name),
+.B IMUX_SOCKET_PATH
+and
+.B IMUX_EXE
+(the imux program, whose directory is first in
+.BR PATH ).
+Nothing else of the server's environment is passed on.
+The program and \fIplugin.conf\fP must belong to the user and not be writable by others.
+.PP
+A plugin that ends with a failure is started again after one second, then two, four and so on to a
+minute; after five restarts within ten minutes it is stopped for good, the reason is logged and
+shown by
+.BR "plugin list" ,
+and it stays off until enabled again.
+Stopping a plugin (disable, unlink, the server ending) sends SIGTERM to its process group and, two
+seconds later, SIGKILL.
+.PP
+Commands:
+.TP
+.BI "imux plugin link " dir
+Check the manifest and the files and link the directory into the plugins directory.
+It does not run until enabled.
+.TP
+.BI "imux plugin unlink " name
+Stop it and remove the link; the directory itself is not touched.
+.TP
+.BI "imux plugin enable " name
+.TQ
+.BI "imux plugin disable " name
+Switch it on or off, now (when the server runs) and from then on.
+Enabled plugins start with the server.
+.TP
+.B "imux plugin list"
+Name, version, state (enabled, disabled, or why it was stopped) and permissions.
+.TP
+.BI "imux plugin logs " name
+The last 100 lines it printed.
+.SH STATUS LINE
+The status line occupies the bottom of the screen.
+From the left it shows the session name in brackets, a tab for each window (number, a colon, the
+name, a star after the current one) and, at the right, the time and the date.
+The default is a plain green bar that needs no particular font or palette; a themed example:
+.PP
+.RS
+.nf
+set \-g status\-style "bg=#181825,fg=#cdd6f4"
+set \-g status\-left "#[bg=#89b4fa,fg=#000000,bold] #S "
+set \-g window\-status\-format "#[bg=#1e1e2e,fg=#a6adc8] #I  #W "
+set \-g window\-status\-current\-format "#[bg=#89b4fa,fg=#000000,bold] #I  #W "
+set \-g window\-status\-separator ""
+.fi
+.RE
+.PP
+The right side is laid out first and is never displaced; one wider than
+.B status\-right\-length
+or the terminal is cut off at its end.
+If the tabs do not fit on one row the bar grows up to five rows, the extra tabs aligned under the
+first and ending where the first row's tabs end; the panes are resized whenever the row count
+changes.
+Tabs that fit in no row are omitted, and the last row ends with an ellipsis.
+.PP
+With
+.B "set set\-titles on"
+each client's terminal is given a title (the window title, set with an operating system command)
+made from
+.B set\-titles\-string
+(default
+.BR "#S:#I:#W \- \(dq#T\(dq" ),
+first when it attaches and then whenever the text changes.
+The string is a format; it knows
+.BR #S ,
+.BR #I ,
+.BR #W ,
+.BR #T ,
+.BR #H ,
+.B #h
+(and the long names such as
+.BR #{session_name} )
+for the current window and its active pane, and the time conversions.
+Control and bidirectional characters are dropped, and a title is cut at 256 characters.
+The option is off by default, and nothing is sent while it is off.
+.PP
+Options:
+.BR status\-left ,
+.BR status\-right ,
+.B window\-status\-format
+and
+.B window\-status\-current\-format
+(contents),
+.B window\-status\-separator
+(between tabs),
+.BR window\-status\-activity\-style " and " window\-status\-bell\-style
+(the look of a tab with that flag, default
+.BR reverse ),
+.B status\-left\-length
+and
+.B status\-right\-length
+(lengths),
+.B status\-style
+(colors of the bar),
+.BR status\-bg " and " status\-fg
+(setting one changes that color of
+.BR status\-style ),
+.BR status\-left\-style " and " status\-right\-style
+(added to the bar's style for those segments),
+.B window\-status\-style
+(every tab),
+.BR window\-status\-current\-style " and " window\-status\-last\-style
+(added for the current window and for the window that was current before it; an activity or bell
+style comes after them, and the tab's own format after that),
+.B status\-justify
+(\fBleft\fP, \fBcenter\fP, \fBright\fP or \fBabsolute\-center\fP: where the tabs sit between the left
+and the right segment; \fBcentre\fP and \fBabsolute\-centre\fP also work; tabs that do not all fit on the first row stay at the left),
+.BR status\-format[0] " to " status\-format[4]
+(a whole row drawn from its own text, left to right and cut at the edge, instead of the standard
+layout).
+In that text \fB#[align=left]\fP, \fB#[align=center]\fP and \fB#[align=right]\fP start the left, the
+middle and the right part of the row: text before any of them is the left part, a style carries over
+from one part to the next, and a part never covers the one before it.
+The bar has at least one row more than the highest index set, and
+.B set \-u
+on the option takes the row back; tabs on a replaced row cannot be clicked, and a replaced first row
+has no right segment.
+.PP
+These options are format strings in which the following are replaced:
+.PP
+.PD 0
+.TP 24
+.BR #S ", " #{session_name}
+session name
+.TP
+.BR #I ", " #{window_index}
+window number (after
+.BR base\-index )
+.TP
+.BR #W ", " #{window_name}
+window name
+.TP
+.BR #h ", " #{host_short}
+short host name
+.TP
+.BR #H ", " #{host}
+host name
+.TP
+.B #{window_flags}
+for the window being drawn:
+.B #
+activity,
+.B !
+bell,
+.B *
+current,
+.B Z
+active pane zoomed,
+.B M
+holds the marked pane
+.TP
+.BR #{window_zoomed_flag} ", " #{window_marked_flag} ", " #{window_active} ", " #{window_activity_flag} ", " #{window_bell_flag} ", " #{window_synchronized} ", " #{pane_synchronized}
+1 or 0 (the last two: the window's panes get what is typed into one,
+.BR synchronize\-panes )
+.TP
+.BI #{? cond , then , else }
+.I then
+when
+.I cond
+is true, else
+.IR else .
+.I cond
+is a variable name, or any text, which is expanded first; it is true when it is neither empty
+nor
+.BR 0 .
+Without
+.I else
+the result is empty.
+Several pairs may be chained:
+.BI #{? c1 , a1 , c2 , a2 , else }
+.TP
+.BI #{==: a , b }
+.BR #{!=: ...} ,
+.BR #{<: ...} ,
+.BR #{>: ...} ,
+.BR #{<=: ...} ,
+.B #{>=: ...}
+compare two texts (as text, not as numbers); the result is
+.B 1
+or
+.B 0
+.TP
+.BI #{&&: a , b ,...}
+.BR #{||: ...} ,
+.BI #{!: a }
+true if all, any, or not the operand is true (as above); the result is
+.B 1
+or
+.B 0
+.TP
+.BI #{= n : name }
+.BI #{=\- n : name }
+the first, or with a minus the last,
+.I n
+characters of the value
+.TP
+.BI #{b: name }
+.BI #{d: name }
+the last component of a path in the value, and the path without it
+.TP
+.BI #{=/ n / marker : name }
+.BI #{=/\- n / marker : name }
+like
+.BI #{= n :}
+and
+.BR #{=\- n :} ,
+with
+.I marker
+added where the text was cut (after the first part, before the last)
+.TP
+.BI #{n: name }
+the number of characters in the value
+.TP
+.BI #{w: name }
+the width of the value in terminal columns
+.TP
+.BI #{p n : name }
+the value padded with spaces to
+.I n
+columns: on the right for a positive
+.IR n ,
+on the left for a negative one (a longer value is left alone)
+.TP
+.BI #{t: name }
+.BI #{t/p: name }
+.BI #{t/f/ format : name }
+the value, a time in seconds since the epoch, shown as a date and time, in a short form that
+depends on its age (\fBt/p\fP), or by the
+.BR strftime (3)
+.I format
+(\fBt/f/\fP); empty when the value is not a time
+.TP
+.BI #{l: text }
+.I text
+as it is, nothing looked up
+.TP
+.BI #{m: pattern , text }
+.BI #{m/r: pattern , text }
+.B 1
+when
+.I text
+matches the pattern, else
+.BR 0 :
+with
+.B m
+a glob (\fB*\fP and \fB?\fP), with
+.B m/r
+a regular expression (up to 512 bytes; no back references).
+The letter
+.B i
+after the slash ignores case:
+.B #{m/ri: ...}
+.TP
+.BI #{e|+|: a , b }
+whole-number arithmetic on two operands; the operators are
+.BR + ,
+.BR \- ,
+.BR * ,
+.B /
+(a division by zero is 0),
+.B m
+(remainder) and the comparisons
+.BR == ,
+.BR != ,
+.BR < ,
+.BR > ,
+.B <=
+and
+.BR >= ,
+which give 1 or 0
+.TP
+.BI #{E: name }
+.BI #{T: name }
+the value read again as a format (a user option that holds
+.B #{...}
+is the usual case);
+.B T
+also fills in the time (as the status line's
+.B %
+conversions do)
+.TP
+.BI #{W: format }
+.BI #{W: format , current-format }
+in the status line (its
+.B status\-format
+rows, left, right, and the window formats): the format once for each window, in order, with that
+window's variables (\fB#I\fP, \fB#W\fP, \fB#{window_flags}\fP and so on), the second one for the
+current window.
+The results are joined with nothing between them, so a separator is written as
+.BR #{?loop_last_flag,,#{window\-status\-separator}} .
+.B #{loop_first_flag}
+and
+.B #{loop_last_flag}
+are 1 on the first and the last window.
+In those places
+.BR status\-left ,
+.BR status\-right ,
+.BR window\-status\-format ,
+.BR window\-status\-current\-format ,
+.B window\-status\-separator
+and the style options above can be read with
+.BR #{E: name } .
+A loop does not nest, and where there is no window list
+.B #{W:
+stays as written
+.TP
+.BI #{P: format }
+.BI #{S: format }
+the same loop over the panes of the window and over the sessions (and
+.B #{W:
+over the windows of the session) in the format of
+.BR display\-message ,
+a format bound to a key, and the titles and positions of menus and popups:
+each turn has the variables of that pane, or of the active pane of that window or session, and the
+second format is for the active pane, the current window, and the session of the pane asked about
+.TP
+.BI #{C: text }
+.BI #{C/r: pattern }
+.BI #{C/i: text }
+.BI #{C/ri: pattern }
+the number, counted from 1, of the first row of the pane's screen that holds the text (a regular
+expression with
+.BR r ,
+case ignored with
+.BR i ),
+or 0; the same places as
+.BR #{P: ,
+and nowhere else: shell text and the status line get an empty answer, since the screen is what a
+program in the pane printed
+.TP
+.BR #{pane_tty} ", " #{pane_mode} ", " #{pane_at_left} ", " #{pane_at_right} ", " #{pane_at_top} ", " #{pane_at_bottom}
+the terminal device of the pane, the mode it is in (\fBcopy\-mode\fP or empty), and 1 or 0 for each
+edge of the window the pane touches
+.TP
+.BR #{pid} ", " #{start_time} ", " #{socket_path} ", " #{version}
+the server's process number, the second it started (seconds since the epoch), its socket, and the
+version a configuration may test (the one
+.B tmux \-V
+prints in a pane)
+.TP
+.BR #{window_layout} ", " #{window_visible_layout}
+the window's layout as a string of the form
+.BR "checksum,WxH,X,Y{...}" ,
+which
+.B select\-layout
+reads back
+.TP
+.BR #{window_last_flag} ", " #{session_many_attached}
+1 or 0: the window that was current before this one; more than one client attached
+.TP
+.B #{client_prefix}
+1 while the client has pressed the prefix key and not yet the key after it, else 0; the status line
+redraws when it changes.
+The bar is drawn once per session, so with several clients attached it is 1 if any of them is
+waiting for the key after the prefix
+.TP
+.B #{pane_start_command}
+the command the pane was started with (\fBnew\-window\fP or \fBsplit\-window\fP with a command);
+empty for a shell
+.TP
+.BR #D ", " #F ", " #T
+the pane id, the window flags, the pane title
+.PD
+.PP
+A name that is none of these is read as an option (so
+.B #{status}
+works), then as a user option, then as a variable of the environment new panes get
+.RB ( set\-environment ,
+else the server's own):
+.BR #{TERM_PROGRAM} .
+This holds everywhere a format is read for a pane: the format of
+.BR display\-message ,
+also when it is bound to a key, the titles and items of
+.BR display\-menu ,
+and the title and position of
+.BR display\-popup .
+Names in the status line also reach the variables of the pane of each window
+.RB ( #{b:pane_current_path}
+in a tab shows that window's pane).
+.PP
+Operands of these forms are expanded first and may hold further
+.BR #{...} ,
+nested up to eight deep.
+Inside an operand a comma is written
+.B #,
+and a closing brace
+.BR #} ;
+a
+.B #[style]
+may hold commas as it is.
+A form with the wrong number of operands is left as written.
+.BI #{q: name }
+is the value as one word for a shell (in single quotes); see
+.BR run\-shell .
+Examples:
+.PP
+.nf
+set status\-right "#{?#{==:#{agent_state},blocked},#{agent_glyph} blocked,}"
+set window\-status\-format "#{?window_active,#[bold]#W,#W}"
+.fi
+.PP
+.PD 0
+.TP 24
+.BR %I:%M\ %p ,\  ...
+.BR strftime (3)
+conversions
+.TP
+.B ##
+a literal
+.B #
+.TP
+.BI #[ style ]
+colors and attributes of the text after it;
+.B #[default]
+returns to
+.B status\-style
+.PD
+.PP
+Messages and the command prompt are drawn in
+.B message\-style
+and
+.B message\-command\-style
+when set.
+.B status
+and
+.B status\-position
+are accepted and ignored: the bar is always on, at the bottom.
+.SS Commands in the status line
+.BI #( command )
+in any of the five format options above is replaced by the first line the command printed the
+last time it ran.
+The bar never waits for a command: until the first run has ended, the place stays empty.
+.PP
+.nf
+set \-g status\-right "#(git \-C #{q:pane_current_path} rev\-parse \-\-abbrev\-ref HEAD 2>/dev/null) %H:%M"
+.fi
+.PP
+The command is run by
+.B sh \-c
+as
+.B run\-shell
+runs a command: in a process group of its own, in the directory of the current pane of the
+session, with the
+.B IMUX_*
+variables of that pane, with its standard input closed and its standard error thrown away.
+Its text is a format, expanded before it runs, so the variables of the current pane
+.RB ( #{pane_current_path} ,
+.BR #{pane_id} ,
+\&...) can be used in a status format; the time conversions are filled in first, so a
+.B %
+in a command is written
+.BR %% .
+Parentheses inside the command must pair up.
+A variable that a program in the pane could have set (names, titles, directories) is refused
+in the text of a command unless it is written
+.BI #{q: name }
+(see
+.BR run\-shell ):
+the command is not run, and the bar shows
+.B [#{q:name}?]
+in its place.
+.PP
+A command runs again when its output is older than
+.B status\-interval
+seconds, for as long as a bar that shows it is drawn for a client;
+nothing runs for a bar nobody looks at, and a command that is no longer in any format is
+forgotten after a minute.
+One that runs longer than
+.B status\-command\-timeout
+seconds is stopped with its children and shows nothing (the reason is in the log).
+At most four commands run at once and at most
+.B status\-commands\-max
+different ones are kept; the others show nothing.
+.PP
+What a command prints is only text: the first line, without control characters, at most 200
+bytes, and a
+.B #
+in it is a
+.B #
+and never starts a variable, a style or another command.
+.SH TERMINAL SUPPORT
+.B imux
+is developed against iTerm2 and Terminal.app.
+It uses the alternate screen, SGR mouse reporting and synchronized output (mode 2026, ignored by
+terminals without it).
+.PP
+Each client tells the server what its terminal can do when it attaches.
+Colors go out as 24-bit when
+.B TERM_PROGRAM
+is
+.B iTerm.app
+(or
+.B LC_TERMINAL
+is
+.BR iTerm2 ,
+which survives ssh) or
+.B COLORTERM
+is
+.B truecolor
+or
+.BR 24bit ;
+otherwise they are mapped to the 256-color palette.
+.SS Images
+Programs show images with:
+.IP \(bu 2
+the iTerm2 inline image protocol
+.RB ( "OSC 1337 ; File=" ,
+also in parts with
+.BR MultipartFile= ,
+.B FilePart=
+and
+.BR FileEnd ,
+as current
+.B imgcat
+sends, and inside a passthrough envelope, as
+.B imgcat
+does behind a multiplexer).
+The file may be PNG, JPEG or GIF, or a Sixel stream (what
+.B imgcat
+sends when given a
+.B .six
+file);
+.IP \(bu 2
+the Kitty graphics protocol
+.RB ( "APC G" ;
+PNG or raw pixels, direct or in chunks, optionally zlib\-compressed with
+.BR o=z ,
+cursor left in place with
+.BR C=1 ,
+pictures removed with
+.B a=d
+.RB ( d=a
+all,
+.B d=i
+by id and placement id
+.RB ( p= ),
+.B d=n
+by image number
+.RB ( I= ),
+.B d=c
+at the cursor,
+.B d=p
+at a cell,
+.B d=q
+at a cell and
+.BR z= ,
+.B d=r
+by a range of ids,
+.B d=x
+a column,
+.B d=y
+a row,
+.B d=z
+a stacking order and
+.B d=f
+the frames; the upper\-case forms also forget a stored picture), several placements of one picture
+told apart by
+.BR p= ,
+pictures named by
+.BR I= ,
+unicode placeholders
+.RB ( U=1 :
+the program prints U+10EEEE with row and column diacritics, the color of the text being the
+image id, and the picture shows where they are), animation
+.RB ( a=f
+frames,
+.B a=a
+to play, stop and loop,
+.B a=c
+to compose; imux plays the frames itself, at least 20 milliseconds apart, at most 64 frames and
+32 MB for a picture and 8 animated pictures per pane), and, only when
+.B kitty\-media
+allows it, pictures read from a file
+.RB ( t=f ),
+a temporary file that is deleted afterwards
+.RB ( t=t ,
+only in a temporary directory and with
+.B tty\-graphics\-protocol
+in its name) or shared memory
+.RB ( t=s ),
+so
+.B kitty +kitten icat
+works);
+.IP \(bu 2
+Sixel.
+.PP
+Whatever the program uses, the picture reaches the outer terminal in the way that terminal
+understands.
+Width and height may be given in cells, pixels, percent or left to the picture.
+.PP
+A picture is decoded once and stored in the pane; the cells it covers refer to parts of it, so it
+scrolls, is erased and falls out of the history exactly as text does.
+The cursor ends in the first column of the next line.
+Limits: 64 MB of encoded data, 32 megapixels, 16384 pixels per side (the header is checked before
+decoding), 256 MB of decoded pictures per pane and 1 GB over all panes; past that the pane's oldest
+pictures are dropped and their cells show a shaded block.
+.PP
+Pictures are decoded on a separate thread, one at a time, so a program that prints many
+expensive ones cannot stop the server from answering its clients or the other panes.
+Only that pane waits: what the program prints after a picture is shown after it, in order, as soon
+as the picture is decoded.
+A picture inside a passthrough envelope, or one that arrives when more than 256 MB of pictures are
+already waiting for the decoder, is decoded in the server's own thread instead.
+.PP
+How a picture reaches the screen depends on the client's terminal:
+.TP
+.B iterm2
+Each rectangle of cells showing one picture is cut out, scaled to the exact pixel size of those
+cells and sent as an inline image; nothing is sent again until the rectangle changes.
+Text, borders, menus and the status line over part of a picture take precedence.
+.TP
+.B kitty
+The same rectangles are sent as placements over the text.
+Each rectangle's pixels are sent once and stored by the terminal under an id, so placing it again
+costs a few bytes.
+Text written over a placement does not replace it, so when any picture cell changes, all placements
+are deleted and the visible ones placed again.
+Everything stored is deleted when the client exits.
+.TP
+.B sixel
+The same rectangles as Sixel, which the terminal stamps into the cells like text.
+Each gets its own palette of at most 256 colors: exact if it has that few, else median cut.
+.TP
+.B blocks
+Anywhere else: block characters, by default quadrants (two samples across and two down per cell),
+each with a foreground and a background color; see
+.BR image\-glyphs .
+Works on any terminal, also over ssh, but coarse; it suits screenshots and diagrams more than fine
+detail.
+.PP
+.B image\-mode
+selects the way.
+Any value other than
+.B auto
+is tried first, and when the terminal does not accept it the usual order below follows, leaving out
+every way the terminal does not accept (what it accepts is known from its name, its answers to the
+probe below and the environment; a terminal that does not answer the probe is trusted with the
+forced way).
+With
+.B auto
+(the default) the first that applies wins:
+.B iterm2
+(iTerm2, WezTerm),
+.B kitty
+(kitty, Ghostty),
+.B sixel
+(foot, mlterm, contour or a
+.B TERM
+naming sixel), else
+.BR blocks .
+.PP
+The client also asks the terminal on attach: its name (XTVERSION), whether it answers a Kitty
+graphics query, and whether its device attributes list Sixel (4).
+It waits at most
+.B image\-probe\-timeout
+milliseconds (default 600; raise it for a slow ssh link, 0 does not ask); a terminal that does not
+answer is judged by its environment alone.
+With
+.B image\-probe auto
+(the default), Terminal.app and a
+.B TERM
+of
+.B dumb
+are not asked, since they could only answer with nothing better;
+.B always
+asks every terminal and
+.B never
+none.
+The client reads that option itself from the plain
+.B set
+lines of the configuration file, before it connects;
+.B source\-file
+is not followed for it.
+The answer can only improve on the environment's guess, never lower it, so a terminal behind ssh or
+.BR sudo ,
+where the variables are lost, is still found.
+Keys typed meanwhile are not lost.
+.PP
+Programs in a pane are told they can show pictures: the device attributes reply lists Sixel (4),
+and the graphics attribute query
+.RB ( "CSI ? Pi ; Pa ; Pv S" )
+answers 256 color registers and a largest picture of the pane's size in pixels, so tools such as
+.BR chafa ,
+.B lsix
+and
+.B timg
+choose Sixel by themselves.
+This holds whatever the outer terminal is; the picture is converted for it as described above.
+.PP
+Panes also understand the Program Status Protocol
+.RB ( "OSC 7501" ,
+revision 0.4): the query
+.B "OSC 7501 ; ?"
+is answered with the supported states
+.RB ( "idle working done blocked error" )
+and kinds
+.RB ( "permission question auth" ),
+which is what makes an agent report what it is doing.
+A pane keeps its program's last report (state, application, message) until the program exits or
+the shell shows its next prompt
+.RB ( "OSC 133 ; A" ),
+except that
+.B done
+and
+.B error
+stay.
+A report that is too long or has bad base64, control characters, an unknown state or a malformed
+id is ignored as a whole.
+.PP
+When a pane becomes narrower than a picture, the part that no longer fits is cut off, not scaled
+or wrapped, and returns when the pane is wide enough again unless something was written on that
+line meanwhile.
+.SS Limits of images and text
+.IP \(bu 2
+A picture keeps its size in cells for as long as it exists; it is clipped, never scaled, to follow
+the pane.
+.IP \(bu 2
+Images and scrollback live in the server's memory: they are not kept across a server restart
+(see
+.BR PERSISTENCE ).
+.IP \(bu 2
+Animations are played by the server and sent to a Kitty terminal frame by frame, as new pictures,
+so a large or fast one uses more bandwidth than in a Kitty terminal on its own, which matters over
+a slow link.
+Kitty graphics with a source rectangle or offsets inside a cell
+.RB ( x= ,
+.BR y= ,
+.BR w= ,
+.BR h= ,
+.BR X= ,
+.B Y=
+on a placement) are accepted and the whole picture is shown.
+.IP \(bu 2
+The outer terminal is asked what it supports and, failing an answer, recognized from environment
+variables; one that does neither (or answers wrongly) may need
+.B image\-mode
+set by hand.
+The query goes to every terminal except Terminal.app, and one that prints unknown escape strings
+shows them briefly on the alternate screen before imux clears it (set
+.B image\-probe never
+for it).
+.IP \(bu 2
+An OSC string from a program (a title, a clipboard request) is cut at 2 MiB: the rest of that
+string is discarded.
+Text that a program supplies for imux to show elsewhere (agent messages, process names, the output
+of a
+.B #()
+command, hook and event values) loses control characters, including the 8\-bit ones, and the
+bidirectional formatting characters that reorder the text around them.
+Pane titles and the variables
+.BR #{pane_title} ,
+.B #{pane_current_path}
+and
+.B #{pane_current_command}
+are cleaned the same way when they are read.
+.IP \(bu 2
+What a pane program can make the server do is bounded.
+A program that stops reading its own input (it sets raw mode and never reads) cannot hold up the
+others: a write to it waits at most 100 ms, and for two seconds after that whatever was meant for
+it (answers to its queries, a paste, focus reports) is dropped.
+A picture covers at most 32768 cells, however small it is.
+A Sixel picture is refused as soon as it would pass 32 million pixels or needs more than eight
+times that much painting.
+Pictures stored with a Kitty
+.B a=t
+are limited to 16 and 64 MiB together.
+The answers to a program that does not read are kept up to 64 KiB; the repeat sequence
+.B CSI b
+repeats at most one screenful; a read turn reports at most one bell.
+Kitty graphics answers carry printable ASCII only, and never a path or a size, because the answer is
+typed into the pane's input.
+.IP \(bu 2
+A client may announce a terminal of at most 1024 columns and 1024 rows.
+.B source\-file
+and
+.B load\-buffer
+read regular files only (a pipe or a device is refused), and
+.B source\-file
+at most 4 MiB.
+A snapshot with more than 1024 panes in all is refused.
+.IP \(bu 2
+A cell keeps at most three zero\-width characters (combining accents, variation selectors, joiners)
+after its base character, eleven with
+.BR "emoji\-width cluster" .
+How wide a joined emoji is depends on the terminal, which imux cannot ask, so the right
+.B emoji\-width
+is a setting.
+.IP \(bu 2
+DCS sequences other than Sixel are ignored, except two requests that get a fixed reply:
+DECRQSS for the scroll region, the cursor style and the text attributes, and XTGETTCAP for
+.BR TN ,
+.BR Co ,
+.B colors
+and
+.BR RGB .
+.SH CONFIGURATION
+When the server starts it reads
+.IR $IMUX_CONFIG ,
+or else
+.IR ~/.imux.conf ,
+or else
+.IR ~/.config/imux/imux.conf .
+Syntax: one command per line, commands joined with
+.BR \e; ,
+.B #
+comments, single and double quotes, a leading
+.BR ~ ,
+and
+.IB name = value
+lines defining variables that later lines use as
+.BI ${ name }
+or
+.BI $ name .
+A line ending in a backslash continues on the next.
+A problem on a line is logged with its file name and line number, and the rest of the file is still
+read.
+.PP
+A lone
+.B {
+starts a command block that ends at the matching lone
+.BR } .
+Inside a block, commands are separated by newlines,
+.BR ; ,
+or
+.BR \e; ;
+a block may span lines, hold
+.B #
+comments, and contain blocks (up to 8 deep, at most 64 KiB).
+Quotes inside it are kept as written, so braces and semicolons in quotes do not end anything.
+The block is the one argument of a command that takes a command, and it is read as a command line:
+.B bind x { new\-window; split\-window \-h }
+is
+.BR "bind x new\-window \e; split\-window \-h" ,
+and a block can stand for the commands of
+.B if\-shell
+and
+.BR set\-hook ,
+or be typed at the command prompt.
+A command given to
+.B bind
+as one quoted string is read the same way.
+A brace that does not stand alone (\fB#{pane_id}\fP,
+.BR ${name} ,
+.BR a{b} )
+is text.
+A lone brace in the place of the key of
+.B bind
+or
+.B unbind
+(\fBunbind {\fP, \fBbind } swap\-pane \-D\fP) is that key and not a block brace; inside a block it
+is always a brace.
+In a configuration file
+.B bind
+and
+.B unbind
+also take the value of
+.B \-T
+written against it, as in
+.BR "unbind \-Tcopy\-mode\-vi x" .
+In a
+.B bind
+block, variables are put in when the key is bound; elsewhere they are put in when the commands run.
+A line number in an error is that of the line the block starts on.
+.PP
+Lines may depend on a condition:
+.BI %if " format"
+runs the lines up to the next
+.BI %elif " format"
+(tried only when no earlier branch ran),
+.B %else
+or
+.B %endif
+when the format expands to something that is neither empty nor
+.BR 0 ;
+quotes around it are dropped.
+The format sees no pane: it has the names of the format list in
+.B STATUS LINE
+that need none
+.RB ( #{version} ,
+.BR #{pid} ,
+.BR #{host} ,
+.BR #{socket_path} ),
+options, user options and environment variables, as they are when the line is read.
+Conditions nest up to 16 deep, and a file has to close each one.
+.BI %hidden " name=value"
+defines a variable of the file like the line
+.IB name = value
+does.
+.PP
+The commands are
+.B set
+.RB [ \-agu ]
+.IR option\ value ,
+.B setw
+.RB [ \-u ]
+.RB [ \-t
+.IR window ]
+.IR option\ [value] ,
+.B bind
+.RB [ \-nr ]
+.RB [ \-T
+.IR table ]
+.IR key\ command ,
+.B unbind
+.RB [ \-n ]
+.RB [ \-T
+.IR table ]
+.IR key ,
+.B source\-file
+.RB [ \-nqv ]
+.IR path ,
+.BR display\-message ,
+.BR show\-options ,
+and the commands of the command prompt, which can also be typed there.
+.B source\-file
+reads the file named by
+.IR path ;
+its last part may hold
+.B *
+and
+.B ?
+(\fBsource\-file ~/.imux.d/*.conf\fP), and the files that match are read in name order (hidden files
+only for a pattern that starts with a dot, at most 64).
+.B \-q
+makes a missing file, or a pattern with no match, no error,
+.B \-n
+reads and checks the files and changes nothing (the errors are named by file and line), and
+.B \-v
+logs each line as it is read.
+The key tables are
+.BR prefix ,
+.BR root ,
+.B copy\-mode\-vi
+and
+.B copy\-mode
+(the emacs keys).
+A copy mode binding is
+.BI "bind \-T copy\-mode\-vi " "key " "send\-keys \-X " action
+(see
+.BR "COPY MODE" );
+.B unbind \-T
+removes a key, and a mode already on keeps the keys it started with.
+An action imux does not have is logged and the key left as it was.
+.PP
+.B set
+also takes
+.B \-q
+(an unknown option is no error) and
+.B \-o
+(an option that has been set keeps its value); the scope flags
+.BR \-s ,
+.B \-w
+and
+.B \-p
+are accepted and mean the same as
+.BR \-g ,
+since there is one set of options.
+.B command\-alias
+is not an option but a list of other names for commands:
+.B "set \-g command\-alias"
+.I name=command
+(or
+.BI command\-alias[ n ]
+to give the entry a place;
+.B set \-u
+with a slot removes it, without one removes all) lets
+.I name
+stand for the command and its arguments at the prompt, in the configuration and in
+.BR "imux name" .
+An alias cannot take the name of a command, is looked up once, and must expand to one command.
+.PP
+Options other than those below are an error.
+Styles are comma separated lists of
+.BI fg= color\fR,
+.BI bg= color
+and attributes
+.RB ( bold ,
+.BR dim ,
+.BR italics ,
+.BR underscore ,
+.BR blink ,
+.BR reverse ,
+.BR hidden ,
+.BR strikethrough ,
+.BR none ),
+a color being a name
+.RB ( black ,
+.BR red ,
+.BR green ,
+.BR yellow ,
+.BR blue ,
+.BR magenta ,
+.BR cyan ,
+.BR white ,
+each also as
+.B brightred
+and so on),
+.BI color N
+(0 to 255; tmux's
+.BI colour N
+also works),
+.BI # rrggbb
+or
+.BR default ,
+for example
+.BR fg=#89b4fa,bg=black,bold .
+Option names with \fBcolor\fP in them, such as
+.BR clock\-mode\-color ,
+also work spelled \fBcolour\fP, as in tmux.
+.SS General
+.TP 24
+.B prefix
+the prefix key (default
+.BR C\-b )
+.TP
+.B prefix2
+a second prefix key, or
+.B None
+(the default)
+.TP
+.BR escape\-time ,\  repeat\-time
+key timing, in milliseconds
+.TP
+.B double\-click\-time
+the most time between presses of one button on one cell that still make a second or third press
+(400 milliseconds)
+.TP
+.B word\-separators
+the characters that end a word for the word motions of copy mode and for a double click.
+With a value, those characters are punctuation and every other character that is not a blank is
+part of a word (so a single blank makes a word run to the next blank).
+Empty, the default, keeps the built-in rule: letters, digits and
+.B _
+make a word and other characters are punctuation.
+The capital-letter motions only stop at blanks
+.TP
+.B history\-limit
+lines of scrollback per pane
+.TP
+.BR base\-index ,\  pane\-base\-index
+first window and pane number (0)
+.TP
+.B mouse
+when off, the mouse is left to the terminal and to programs that ask for it
+.TP
+.B synchronize\-panes
+when on, what is typed into a pane (keys, pastes and
+.BR send\-keys )
+also goes to every other pane of its window that is running and not in copy mode.
+Default off; a window can have its own value (see
+.BR set\-window\-option )
+.TP
+.B monitor\-activity
+when on, a window that prints while nobody views it gets the flag
+.B #
+in
+.B #{window_flags}
+and its tab is drawn in
+.BR window\-status\-activity\-style .
+A window is viewed when it is the current window of a session with an attached client, so with no
+client attached every window counts as not viewed.
+The flag goes when the window is viewed or the monitor is switched off.
+Default off; a window can have its own value (see
+.BR set\-window\-option ).
+Windows are not saved with these flags or values
+.TP
+.B monitor\-bell
+the same for a bell, with the flag
+.B !
+and
+.BR window\-status\-bell\-style ;
+a bell wins over activity.
+Default on; a window can have its own value
+.TP
+.B monitor\-silence
+seconds of no output after which a window nobody views gets the flag
+.B ~
+in
+.B #{window_flags}
+(and
+.BR #{window_silence_flag} ).
+Printing takes the flag off, and so does viewing the window or setting this to 0, the default;
+viewing counts as output for the time that follows.
+A value set with
+.B set\-window\-option
+without
+.B \-g
+is the global one
+.TP
+.B silence\-action
+which windows get the flag:
+.BR any ,
+.BR none ,
+.B current
+(the current window of a session with no client attached) or
+.B other
+(the default).
+.B visual\-silence
+shows the message
+.B Silence in window N
+to the clients of that session when the flag goes up (default off)
+.TP
+.B bell\-action
+which bells reach the terminals of the clients:
+.B any
+(every bell, the default),
+.BR none ,
+.B current
+(only bells in the current window of a session) or
+.BR other .
+The flag of
+.B monitor\-bell
+is set whatever this says
+.TP
+.B visual\-bell
+when on, a bell that
+.B bell\-action
+lets through shows the message
+.B Bell in window N
+to the clients of that session instead of ringing.
+Default off
+.TP
+.B visual\-activity
+when on, the first output of a window nobody views that
+.B monitor\-activity
+flags shows the message
+.B Activity in window N
+to the clients of that session.
+Default off
+.TP
+.B status
+.B on
+or
+.BR off ;
+with
+.B off
+there is no status line and the panes get its rows.
+The numbers 2 to 5 are accepted and mean
+.BR on :
+the bar takes as many rows as its tabs need.
+While the bar is off, a message and the command prompt are drawn over the last row of the screen
+for as long as they last
+.TP
+.B status\-position
+.B bottom
+(default) or
+.BR top :
+the side of the screen the status line is on.
+The panes, the agent dock, the pickers and the click on a tab follow it; a message and the command
+prompt take the place of the bar's first row
+.TP
+.B mode\-keys
+.B emacs
+or
+.BR vi ;
+unless set, vi when
+.B $VISUAL
+(else
+.BR $EDITOR )
+has "vi" in its file name, else emacs
+.TP
+.BR display\-time ,\  display\-panes\-time ,\  status\-interval
+durations
+.TP
+.B run\-shell\-timeout
+seconds a
+.B run\-shell
+or
+.B if\-shell
+command may run (default 10)
+.TP
+.B status\-command\-timeout
+seconds a
+.BI #( command )
+of the status line may run (default 2, 1 to 60)
+.TP
+.B status\-commands\-max
+how many different
+.BI #( command )
+the status line keeps (default 8, 1 to 32)
+.TP
+.B automatic\-rename
+.TQ
+.B automatic\-rename\-format
+window naming; the format understands
+.B #{pane_current_command}
+and
+.B #{s/from/to/:pane_current_command}
+.TP
+.B default\-shell
+the shell started in panes; empty means
+.BR $SHELL ,
+and
+.B /bin/sh
+when that is unset
+.TP
+.B shell\-syntax
+how commands typed into panes are quoted and chained:
+.BR auto ,
+.BR posix ,
+.BR fish ,
+.B nu
+or
+.BR pwsh .
+.B auto
+follows the shell's name; for an unknown shell such as tcsh, imux types nothing that needs quoting
+or chaining
+.TP
+.B remain\-on\-exit
+.BR off ", " on " or " failed :
+what to do with a pane whose program ended.
+Off (the default) closes it.
+On keeps it, showing what the program printed and the line
+.IR "Pane is dead (status N)" ;
+it takes no input, stays in its place until
+.B kill\-pane
+or
+.BR respawn\-pane ,
+and fires
+.BR pane\-died .
+.B failed
+keeps only the panes whose program did not end with status 0.
+A session whose last pane is a dead one stays alive
+.TP
+.B focus\-events
+on (default) or off: ask the terminal to say when its window gains or loses the keyboard focus.
+The reports fire
+.B client\-focus\-in
+and
+.BR client\-focus\-out ,
+and go on to the active pane when its program asked for them (editors use them to reread files).
+A pane that becomes the active pane of its window is told the same way, and fires
+.BR pane\-focus\-in " and " pane\-focus\-out .
+Off: no report is requested, so no program in a pane gets any
+.TP
+.B command\-from\-panes
+what programs in panes may run: off (look only), spawned (act on the panes they spawned) or on
+(see
+.BR COMMANDS )
+.TP
+.B spawned\-depth
+how many levels of panes a program in a pane may spawn below a pane you made (2, from 1 to 8)
+.TP
+.B spawned\-panes\-max
+how many live spawned panes one pane you made may have (16, from 1 to 256)
+.TP
+.B pane\-min\-width
+the fewest columns either pane may have after a split asked for by a program in a pane (20, from 1
+to 500)
+.TP
+.B pane\-min\-height
+the fewest rows either pane may have after such a split (5, from 1 to 200)
+.TP
+.B tmux\-compat
+give new panes
+.BR $TMUX ,
+.B $TMUX_PANE
+and a
+.B tmux
+first on
+.B PATH
+(on; see
+.BR "Programs that look for a terminal multiplexer" )
+.TP
+.B agent\-control
+let scripts type into the panes of agents with
+.B "imux agent prompt"
+and start them with
+.B "imux agent start"
+(off)
+.TP
+.B agent\-stall\-time
+seconds (1 to 300, default 5) an agent may show neither
+.B working
+nor
+.B blocked
+after
+.B "imux agent prompt \-\-wait"
+typed its text before the call fails as
+.I prompt_stalled
+.TP
+.B agent\-kind
+space separated
+.IB kind = program
+entries, the agents
+.B "imux agent start \-\-kind"
+may run: the kind is named like an agent, the program a plain command name that is also in
+.BR restore\-commands .
+Empty by default (then only
+.B worktree\-command
+can be started)
+.TP
+.B update\-environment
+space separated variable names (default
+.BR "DISPLAY SSH_ASKPASS SSH_AUTH_SOCK SSH_AGENT_PID SSH_CONNECTION WINDOWID XAUTHORITY" ):
+each time a client attaches, the ones it has are copied for new panes and the ones it lacks are
+dropped, so a replaced ssh login leaves no pane with a dead
+.BR SSH_AUTH_SOCK .
+The client reads it from the plain
+.B set
+lines, like
+.B image\-probe\-timeout
+.TP
+.B window\-size
+which client decides the size of a window when several look at the session:
+.B smallest
+(default),
+.B largest
+(the others see the top left part),
+.B latest
+(the one that typed or was resized last), or
+.B manual
+(always
+.BR default\-size ).
+Changing it applies at once
+.TP
+.B default\-size
+.IB cols x rows
+(default
+.BR 80x24 ,
+10 to 1000 each): the size of a session nobody looks at yet, and of every window under
+.B "window\-size manual"
+.TP
+.B strip\-environment
+space separated variable names, or starts ending in
+.BR * ,
+that the server removes from the environment of new panes (default: the per-window identity of the
+terminal that started the server,
+.BR "ITERM_SESSION_ID ITERM_PROFILE KITTY_WINDOW_ID KITTY_PID KITTY_PUBLIC_KEY WEZTERM_PANE WEZTERM_UNIX_SOCKET ZELLIJ* STY" ,
+and the session markers of an agent started in that terminal).
+.B WINDOW
+goes with
+.BR STY .
+A name that
+.B set\-environment
+or a
+.B \-e
+flag gives a value is kept, and an empty option strips nothing.
+Capability hints such as
+.B TERM_PROGRAM
+and
+.BR LC_TERMINAL ,
+.BR TERM ,
+and secrets such as API keys stay
+.SS Appearance
+.TP 24
+.BR pane\-border\-style ,\  pane\-active\-border\-style ,\  mode\-style
+styles
+.TP
+.BR display\-panes\-color ,\  display\-panes\-active\-color
+the background of the number that
+.B display\-panes
+draws on a pane that is not the active one, and on the active one; default, the built-in colors
+.TP
+.BR pane\-border\-status ,\  pane\-border\-format
+with
+.B top
+or
+.B bottom
+(default
+.BR off )
+every pane gives its first or last row to a label: the program in the pane has one row less, and the
+row shows the format
+.B pane\-border\-format
+(default the pane index, reversed in the active pane, and the title) on the divider line, in the
+style of the dividers.
+A pane of one row has no label.
+A click on the label row does nothing; the label is not part of mouse keys.
+Terminal scrolling of full-width panes is not used while labels are on
+.TP
+.B pane\-border\-lines
+the characters of the dividers between panes: single, double, heavy, simple (plain
+.BR - ,
+.B |
+and
+.BR + )
+or spaces (default single)
+.TP
+.BR window\-style ,\  window\-active\-style
+the colors a pane's cells take where the program did not choose one (the terminal's default):
+every pane takes
+.BR window\-style ,
+and the active pane then takes
+.B window\-active\-style
+on top of it; a style set with
+.B setw
+without
+.B \-g
+is the global one (default; default)
+.TP
+.BR message\-style ,\  message\-command\-style
+styles of messages and the command prompt
+.TP
+.BR menu\-style ,\  menu\-selected\-style ,\  menu\-border\-style
+styles of a menu, of its chosen item and of its border (default; bg=yellow,fg=black; default)
+.TP
+.B menu\-border\-lines
+line set of a menu's border: single, rounded, double, heavy, simple, padded or none (single)
+.TP
+.BR popup\-style ,\  popup\-border\-style
+styles of a popup and of its border (default; default)
+.TP
+.B popup\-border\-lines
+line set of a popup's border, as for menus (single)
+.TP
+.B popup\-from\-panes
+let programs in panes run
+.B display\-popup
+(on; see
+.BR Popups )
+.TP
+.B status\-*
+the options under
+.B "STATUS LINE"
+.TP
+.B clock\-mode\-color
+one color (blue)
+.TP
+.B clock\-mode\-style
+24 or 12 hours (24)
+.SS Clipboard and buffers
+.TP 24
+.B buffer\-limit
+automatic paste buffers kept (50)
+.TP
+.B copy\-command
+shell command that receives the copied text (default
+.B pbcopy
+on macOS; on Linux the first of
+.BR wl\-copy " (under Wayland), " "xclip \-selection clipboard" " and " "xsel \-b"
+that is installed, and nothing is run when there is none)
+.TP
+.B set\-clipboard
+.B external
+(default),
+.B on
+or
+.BR off .
+Text copied in copy mode goes to the terminal's clipboard unless
+.BR off .
+Only
+.B on
+lets a program in a pane set the clipboard with the OSC 52 sequence, and then only a well formed
+write (a selection of letters and digits, base64 data of at most 1 MiB), only to the terminals
+that show that pane, at most once a second per pane; the read form is never answered
+.SS Images
+.TP 24
+.B image\-mode
+.BR auto ,
+.BR blocks ,
+.BR iterm2 ,
+.B kitty
+or
+.B sixel
+(see
+.BR "TERMINAL SUPPORT" )
+.TP
+.B image\-probe\-timeout
+milliseconds, 0 to 5000 (600)
+.TP
+.B image\-probe
+.BR auto ,
+.B always
+or
+.B never
+(see
+.BR "TERMINAL SUPPORT" )
+.TP
+.B image\-band\-rows
+0 to 64 (4).
+A picture is drawn to the terminal in bands this many cell rows high, cut at rows of the picture
+itself, and each band is encoded once and kept.
+Scrolling a large picture (in copy mode, or as output scrolls) then reuses the bands instead of
+encoding everything visible again at each step, and something laid over the picture, like the
+position shown in copy mode, only redraws the band it touches.
+0 draws each rectangle of the picture in one piece.
+Bands apply to terminals that are sent inline pictures; see
+.BR image\-prefer
+.TP
+.B image\-glyphs
+.BR quadrant ,
+.B sextant
+or
+.B octant
+(quadrant).
+The characters pictures are drawn with where the terminal shows no pictures: two samples across and
+two (quadrants), three (sextants) or four (octants) down each cell.
+More samples are finer but need a font that has the characters, and a terminal cannot be asked
+whether it does: if the cells show boxes, use a coarser set
+.TP
+.B image\-dither
+.B none
+or
+.B ordered
+(none).
+For the two ways a picture is cut down to a small palette: the colors of the character cells of a
+terminal without 24-bit color (mapped to its 256 colors), and a Sixel picture with more than 256
+colors (reduced to 256 registers).
+.B ordered
+adds a fixed 8 by 8 threshold pattern to each color before it is mapped, so a smooth gradient
+becomes a fine pattern of the two nearest palette entries instead of bands.
+The pattern is indexed by the place in the picture, never by where the picture is on the screen, so
+a picture that scrolls keeps its pattern and nothing shimmers.
+A client with 24-bit color, a picture of 256 colors or fewer, and the iTerm2 and Kitty ways of
+drawing are not changed.
+A change repaints the pictures
+.TP
+.B image\-scroll
+on or off (on).
+For terminals that are sent inline or Sixel pictures: when a pane that is as wide as the screen
+scrolls, in copy mode or as output goes by, the rows already on the screen are moved with a scroll
+region (the pictures in them move along) and only the rows that came into view are drawn.
+Nothing is added to the terminal's own scrollback, and the scrollback of imux is not affected
+.TP
+.B image\-prefer
+.BR auto ,
+.B kitty
+or
+.B inline
+(auto).
+With
+.B auto
+(and
+.BR inline )
+pictures go by the iTerm2 protocol first, then Kitty, then Sixel, and a terminal that has none gets
+color blocks (truecolor, else 256 colors).
+.B kitty
+shows pictures on an iTerm2 that answers the Kitty graphics query through that protocol instead:
+each picture is sent once and only parts of it are placed afterwards.
+Read by the client from the configuration file, like
+.B image\-probe\-timeout
+.TP
+.B image\-kitty\-placement
+.B source
+or
+.B crop
+(source).
+Terminals shown pictures through the Kitty protocol get each picture once and every redraw shows a
+rectangle of it
+.RB ( source );
+.B crop
+stores every part separately
+.TP
+.B image\-copy\-text
+the text that stands for a picture in copy mode, in
+.B capture\-pane
+and in the agent preview, once for each run of picture cells ("[image]"; empty leaves pictures out)
+.TP
+.B kitty\-media
+.B none
+(default),
+.B files
+(Kitty
+.B t=f
+and
+.BR t=t )
+or
+.B all
+(also
+.BR t=s ).
+The server reads the file or shared memory a program names, as the user of the server.
+That is meant for programs running on the same machine; a program on another machine (over ssh)
+would make the server open files of its user, which is why it is off.
+Files under
+.BR /proc ,
+.BR /sys ,
+.B /dev
+and anything but a regular file are refused; a shared memory object is mapped, so a program that
+shrinks it meanwhile can crash the server
+.TP
+.B emoji\-width
+.B parts
+(default) or
+.BR cluster :
+how wide a joined emoji (a zero\-width joiner sequence, a flag, a skin tone, a character followed by
+the emoji selector) is.
+With
+.B cluster
+it is one glyph of two cells, as terminals that join them draw it; with
+.B parts
+each part keeps its own width, which suits terminals that do not
+.SS Persistence
+See
+.BR PERSISTENCE .
+.TP 24
+.B autosave\-interval
+seconds, 0 for never (300)
+.TP
+.B autosave\-history
+how many rolling copies of the autosave to keep, 0 for none (24); see
+.B PERSISTENCE
+.TP
+.B autosave\-history\-interval
+the least seconds between two rolling copies (900)
+.TP
+.B restore\-on\-start
+on
+.TP
+.B restore\-commands
+program names separated by spaces (default
+.BR "claude vim nvim nano less man htop ssh" )
+.TP
+.B restore\-claude
+on
+.TP
+.B claude\-programs
+program names separated by spaces that count as the agent, by the file name of the program or of
+its first argument (default
+.BR claude ).
+Name a wrapper script or renamed binary here; nothing else is built in
+.SS Agents
+See
+.B "AGENT STATUS"
+and
+.BR "AGENT PANEL" .
+.TP 24
+.BR agent\-glyph\-working ,\  agent\-glyph\-blocked ,\  agent\-glyph\-done ,\  agent\-glyph\-error
+glyphs
+.TP
+.BR agent\-style\-working " ... " agent\-style\-error
+their styles
+.TP
+.BR agent\-panel ,\  agent\-panel\-jump ,\  agent\-panel\-preview ,\  agent\-panel\-preview\-lines ,\  agent\-panel\-sort ,\  agent\-overlay\-width ,\  agent\-overlay\-height
+the panel
+.SS Worktrees
+See
+.BR WORKTREES .
+.TP 24
+.B repos\-dir
+the directory
+.B repo\-wizard
+scans
+.TP
+.B worktree\-base
+empty: automatic
+.TP
+.B worktree\-detach
+off
+.TP
+.B worktree\-name\-pattern
+a regular expression (default
+.BR "[A\-Za\-z0\-9][A\-Za\-z0\-9._/\-]*" ;
+an invalid one is refused by
+.BR set )
+.TP
+.B worktree\-path
+default
+.BR #{repo}\-worktrees/#{name} ,
+relative to the repository's parent
+.TP
+.B worktree\-branch\-format
+default
+.B #{name}
+.TP
+.B worktree\-layout
+default
+.B claude|shell
+.TP
+.BR worktree\-command ,\  worktree\-start ,\  worktree\-setup ,\  agent\-kind
+empty
+.SS User options
+A name starting with
+.B @
+(then letters, digits,
+.BR _ ,
+.B \-
+and
+.BR . ,
+up to 63 characters) is an option of your own: free text that formats and scripts read.
+.B set \-g @name value
+stores it,
+.B \-a
+appends,
+.B \-u
+removes it, and
+.B setw
+and
+.B set \-w
+work the same (a user option has one scope, the server's).
+.B show\-options
+lists them after the others and prints one with
+.BR "show\-options \-gv @name" .
+.B #{@name}
+gives the value, or nothing when there is none, in
+.BR display\-message ,
+.B \-F
+formats, menu and popup titles, the status line and shell text.
+At most 4096 are kept, each at most 4096 bytes, and control characters are dropped from a value.
+They are not saved with a session: the configuration sets them again.
+.PP
+Shell text (a
+.B run\-shell
+command, a
+.B #(command)
+segment) may use
+.B #{@name}
+only when the value was given by the configuration, a key or the prompt.
+A value given by a program in a pane (possible only with
+.BR command\-from\-panes )
+must be written
+.BR #{q:@name} ,
+as for any variable a pane could have set.
+.SS Accepted and ignored
+Some options that other programs' configuration files set, and that imux does not need
+.RB ( default\-terminal ,
+.BR terminal\-overrides ,
+.BR extended\-keys ,
+.BR aggressive\-resize ,
+.B allow\-rename
+and a few dozen more), are accepted by
+.BR set ,
+hold no value and are not listed by
+.BR show\-options .
+An array option may carry an index
+.RB ( user\-keys[0] ).
+.B imux check\-config
+lists each one as
+.BR ignored\-option .
+A name that is neither an option of
+.B imux
+nor in this list is an error.
+.PP
+.B show\-options
+lists the options that nothing has read yet; the server also writes that list to its log when it
+exits.
+.SH FILES
+.TP
+.I ~/.imux.conf
+The configuration file.
+.TP
+.I ~/.config/imux/plugins/NAME
+The plugins (links to their directories), and
+.I ~/.local/state/imux/plugins
+for what the server keeps of them: \fINAME.enabled\fP, \fINAME.crashed\fP (why it was stopped) and
+\fINAME.log\fP.
+See
+.BR PLUGINS .
+.TP
+.I $TMPDIR/imux\-UID/default
+The server socket.
+The directory has mode 0700 and the socket 0600 from the moment it is created.
+.I $XDG_RUNTIME_DIR
+replaces
+.B TMPDIR
+on Linux when it is unset and the variable is an absolute path.
+.I /tmp
+is used if neither is set or the path would be too long for a socket.
+.TP
+.I $TMPDIR/imux\-UID/server.log
+The server log, one JSON object per line, mode 0600
+.RI ( server\-name.log
+for a named server).
+.TP
+.I $TMPDIR/imux\-UID/shims/tmux
+A link to the
+.B imux
+program, in a directory of mode 0700 owned by you, made by the server when it starts a pane with
+.B tmux\-compat
+on; a file or directory in its place is left alone and the pane gets no link.
+.TP
+.I ~/.local/state/imux/autosave.imux
+The autosave, with the one before it in
+.IR autosave.prev ,
+used if the newest file is damaged.
+When the server starts and the newest file does not read back (damaged, or written by a newer
+version), it is moved to
+.IR autosave.bad.MILLISECONDS ,
+so the first new save does not replace the good previous copy; the newest three of those are kept
+and nothing restores from them.
+.TP
+.I ~/.local/state/imux/snapshots/NAME.imux
+Named snapshots.
+.PP
+Snapshot files are text, written to a temporary file and renamed so that a crash never leaves a
+half-written one; the directory has mode 0700 and the files 0600.
+A file with a version this
+.B imux
+does not know, or one cut short, is refused with a message in the log, and the server starts without
+it.
+.PP
+The server serves only connections from your own user id, and at most 256 at a time.
+A panic is logged with its location and a backtrace and contained: a pane whose output handling
+panicked is closed and a client whose input handling panicked is disconnected, while other sessions
+continue.
+A client that panics resets the terminal before exiting.
+.PP
+The server writes no core file (it would hold what the panes showed) and raises its open file limit,
+since each pane, client and helper takes descriptors.
+Programs in panes get the limits the server was started with, no descriptor of the server (signal
+pipe, other panes' terminals, sockets) and the default SIGPIPE.
+Git is run without
+.BR GIT_DIR ,
+.BR GIT_WORK_TREE ,
+.B GIT_INDEX_FILE
+and the other variables that point at a different repository, and never asks for a password.
+.SH ENVIRONMENT
+In every pane:
+.B IMUX_ENV
+(always 1),
+.B IMUX_PANE_ID
+(the pane's number) and
+.B IMUX_SOCKET_PATH
+(the server's socket); see
+.BR "AGENT STATUS" .
+With
+.B tmux\-compat
+on also
+.BR TMUX ,
+.B TMUX_PANE
+and
+.BR IMUX_SHIM_DIR .
+.TP
+.B IMUX_SOCKET_NAME
+The name of the server to use (see
+.BR SYNOPSIS ).
+.TP
+.B IMUX_ALLOW_NESTED
+Set to 1 to let
+.BR imux ,
+.B imux new
+and
+.B imux attach
+attach a client from inside a pane of the server they attach to.
+Without it they refuse, because the client would show the screen inside itself; commands that only
+talk to the server (\fBimux ls\fR, \fBimux new\-window\fR, ...) work in a pane.
+A program that only inherited the variables of another server (a different
+.BR TMPDIR ,
+.BR \-L )
+is not held back.
+To start imux from a shell startup file only outside imux, test
+.B IMUX_ENV
+first, as in
+.BR "[ \-z \(dq$IMUX_ENV\(dq ] && exec imux" .
+.TP
+.B IMUX_PLUGINS_DIR
+The directory of the plugin links, instead of
+.I $XDG_CONFIG_HOME/imux/plugins
+or
+.IR ~/.config/imux/plugins .
+In a plugin: \fBIMUX_PLUGIN\fP, \fBIMUX_SOCKET_PATH\fP and \fBIMUX_EXE\fP (see
+.BR PLUGINS ).
+.TP
+.B IMUX_CONFIG
+The configuration file to read instead of the default locations.
+.TP
+.B IMUX_STATE_DIR
+The directory for snapshots instead of
+.I $XDG_STATE_HOME/imux
+or
+.IR ~/.local/state/imux .
+.TP
+.B SHELL
+The program run in each new pane unless
+.B default\-shell
+is set;
+.I /bin/sh
+if neither is.
+.TP
+.B TMPDIR
+The location of the socket directory (on Linux
+.B XDG_RUNTIME_DIR
+when this is unset).
+.TP
+.B IMUX_LOG
+The log level: debug, info or error.
+Any other value, or none, selects warn.
+.TP
+.B IMUX_LOG_FILE
+A file to which the client appends its log lines.
+.TP
+.B IMUX_RECORD_OUTPUT
+A path.
+Every byte the client writes to its terminal is also appended to this path followed by a dot and the
+process id of the client (mode 0600; an existing file or a link is refused).
+For finding out what a terminal was sent when a picture flickers:
+.B cat
+the file in that terminal to see it again.
+.TP
+.BR TERM_PROGRAM ", " LC_TERMINAL ", " COLORTERM
+Read by the client to find out what its terminal can do; see
+.BR "TERMINAL SUPPORT" .
+.SH LICENSE
+imux is free software: you can redistribute it and modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+It is distributed in the hope that it will be useful, but without any warranty; without even the implied warranty of merchantability or fitness for a particular purpose.
+The full text is in the file LICENSE.md of the source.

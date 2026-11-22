@@ -1,0 +1,10 @@
+#!/bin/bash
+# `stat -f FORMAT FILE` as the tests use it (BSD) for GNU stat: %Lp is the octal mode, %m the
+# modification time. Anything else goes to the real stat untouched.
+if [ "${1:-}" = "-f" ]; then
+  case "${2:-}" in
+    %Lp) shift 2; exec /usr/bin/stat -c %a "$@" ;;
+    %m) shift 2; exec /usr/bin/stat -c %Y "$@" ;;
+  esac
+fi
+exec /usr/bin/stat "$@"

@@ -1,0 +1,31 @@
+# cargo deny check advisories bans sources licenses   (Phase 7, S2). Advisories come from the RustSec database.
+# The project is GPL-3.0-or-later (LICENSE.md). Every license below can be combined with it: they
+# are permissive, and Apache-2.0 is compatible with version 3 of the GPL (not with version 2).
+[graph]
+all-features = false
+
+[advisories]
+ignore = []
+
+[licenses]
+allow = [
+  "GPL-3.0-or-later",
+  "MIT",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-3-Clause",
+  "Zlib",
+  "0BSD",
+  "Unlicense",
+]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+deny = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
