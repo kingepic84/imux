@@ -9,7 +9,7 @@ const GAP: Duration = Duration::from_millis(600);
 fn client(e: &Env, args: &[&str]) -> Client {
     let c = e.client(100, 30, args);
     assert!(e.has_client(), "the client did not attach");
-    std::thread::sleep(Duration::from_millis(700));
+    assert!(c.wait_drawn(LONG), "the client drew nothing");
     c
 }
 
@@ -58,7 +58,7 @@ fn m15_wizard() {
     t.ok("plain directories are not listed", !c.seen("plain"));
     t.ok("hidden ones are not listed", !c.text().contains(".hidden"));
     c.send(b"q");
-    std::thread::sleep(GAP);
+    assert!(c.wait_gone("alpha", LONG), "the picker did not close");
     t.ok("cancelling creates nothing", !repos.join("alpha-worktrees").exists() && !repos.join("beta-worktrees").exists());
     leave(c);
 
@@ -77,7 +77,6 @@ fn m15_wizard() {
     let mut c = client(&e, &["attach", "-t", "w"]);
     c.type_chunks(&["\x02:"], GAP);
     c.send_str("set worktree-branch-format feature/#{name}-#{slug}\r");
-    std::thread::sleep(GAP);
     c.type_chunks(&["\x02W", "\r"], GAP);
     c.send_str("ABC-10 login-fix\r");
     t.ok("the directory is the bare name", wait_until(LONG, || repos.join("alpha-worktrees/ABC-10").is_dir()));
@@ -93,7 +92,6 @@ fn m15_wizard() {
     let mut c = client(&e, &["attach", "-t", "w"]);
     c.type_chunks(&["\x02:"], GAP);
     c.send_str("set repos-dir /nonexistent-dir-x\r");
-    std::thread::sleep(GAP);
     c.send(b"\x02W");
     t.ok("a message says it cannot read it", c.wait_seen("cannot read /nonexistent-dir-x", LONG));
     leave(c);

@@ -25,7 +25,6 @@ fn detach(c: &mut Client) {
 
 fn fresh(e: &Env) {
     e.kill_server();
-    std::thread::sleep(Duration::from_millis(300));
 }
 
 #[test]
@@ -42,7 +41,6 @@ fn t_clients() {
         c.send(b"\x02t");
         t.ok("the clock is drawn in the color of clock-mode-color", c.wait_for("48;5;196", LONG));
         c.send(b"x");
-        std::thread::sleep(Duration::from_millis(500));
         c.send_str("echo clk-$((1+2))\r");
         t.ok("a key leaves the clock and is not typed into the pane", c.wait_for("clk-3", LONG));
         t.ok("the key that left the clock did not reach the shell", !c.text().contains("xecho clk"));
@@ -61,7 +59,6 @@ fn t_clients() {
         c.send_str("echo right-$(stty size | tr \" \" x)\r");
         t.ok("the new pane is on the right with 49 columns", c.wait_for("right-29x49", LONG));
         c.send(b"\x02:");
-        std::thread::sleep(Duration::from_millis(300));
         c.send_str("swap-pane\r");
         assert!(wait_until(LONG, || e.out(&["display-message", "-p", "-t", "%0", "#{pane_left}"]) != "0"), "the panes did not swap");
         c.send_str("echo swapped-$(stty size | tr \" \" x)\r");
@@ -78,7 +75,6 @@ fn t_clients() {
         c.send(b"\x02%");
         assert!(wait_until(LONG, || e.out(&["list-panes", "-t", "w:"]).lines().count() == 2), "the split did not happen");
         c.send(b"\x02:");
-        std::thread::sleep(Duration::from_millis(300));
         c.send_str("swap-pane\r");
         t.ok("it says there is no marked pane", c.wait_screen("no marked pane", LONG));
         detach(&mut c);
@@ -115,7 +111,6 @@ fn t_clients() {
             e.sh(&format!("kill -CONT {pid}"));
         }
         t.ok("the client stops like a job when it is told to suspend", stopped);
-        std::thread::sleep(Duration::from_millis(500));
         c.send_str("echo after-$((1+2))\r");
         t.ok("after it continues the screen is drawn again and works", c.wait_for("after-3", LONG));
         detach(&mut c);

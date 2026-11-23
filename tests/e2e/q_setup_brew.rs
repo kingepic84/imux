@@ -6,7 +6,15 @@ use crate::support::*;
 use std::path::Path;
 
 fn imux(e: &Env, exe: &Path, args: &[&str]) -> Res {
-    let out = e.command(&p(exe)).args(args).output().expect("imux runs");
+    // A program just copied can be refused with "text file busy" (ETXTBSY) while another test's
+    // fork still holds the write end of the copy open; it is only for a moment, so it is asked again.
+    let out = loop {
+        match e.command(&p(exe)).args(args).output() {
+            Ok(out) => break out,
+            Err(err) if err.raw_os_error() == Some(26) => std::thread::sleep(std::time::Duration::from_millis(20)),
+            Err(err) => panic!("imux does not run: {err}"),
+        }
+    };
     Res { code: out.status.code().unwrap_or(-1), out: String::from_utf8_lossy(&out.stdout).into_owned(), err: String::from_utf8_lossy(&out.stderr).into_owned() }
 }
 

@@ -10,6 +10,17 @@ fn spawn(e: &Env, args: &[&str]) -> Child {
     e.command(BIN).args(args).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn().unwrap()
 }
 
+/// A command that waits in the server: its connection has been taken, and one more request has gone
+/// through the server after it (so a wait that was going to answer at once has been answered).
+fn spawn_waiting(e: &Env, args: &[&str]) -> Child {
+    let connections = || e.server_log().matches(" connected\"}").count();
+    let before = connections();
+    let child = spawn(e, args);
+    assert!(wait_until(Duration::from_secs(10), || connections() > before), "the server never took the connection of {args:?}");
+    e.run(&["list-sessions"]);
+    child
+}
+
 fn ended(c: &mut Child, secs: u64) -> bool {
     wait_until(Duration::from_secs(secs), || matches!(c.try_wait(), Ok(Some(_))))
 }
@@ -102,16 +113,14 @@ fn b_compat() {
     t.ok("the only pane of the only window cannot leave", e.run(&["join-pane", "-s", "only:", "-t", "jn:a"]).code != 0);
 
     t.section("wait-for");
-    let mut w1 = spawn(&e, &["wait-for", "chan1"]);
-    std::thread::sleep(Duration::from_secs(1));
+    let mut w1 = spawn_waiting(&e, &["wait-for", "chan1"]);
     t.ok("a wait blocks", running(&mut w1));
     e.run(&["wait-for", "-S", "chan1"]);
     t.ok("a signal lets it go", ended(&mut w1, 5));
     e.run(&["wait-for", "-S", "early"]);
     t.ok("a signal sent before the wait is kept for it", e.run_for(&["wait-for", "early"], Duration::from_secs(10)).code == 0);
     e.run(&["wait-for", "-L", "mtx"]);
-    let mut w2 = spawn(&e, &["wait-for", "-L", "mtx"]);
-    std::thread::sleep(Duration::from_secs(1));
+    let mut w2 = spawn_waiting(&e, &["wait-for", "-L", "mtx"]);
     t.ok("a second lock waits", running(&mut w2));
     e.run(&["wait-for", "-U", "mtx"]);
     t.ok("unlocking hands the lock on", ended(&mut w2, 5));
@@ -121,8 +130,7 @@ fn b_compat() {
     t.ok("a bad channel name is an error", e.run(&["wait-for", "bad name"]).code != 0);
     e.run(&["new-session", "-d", "-s", "wf"]);
     e.ready("wf:", Duration::from_millis(500));
-    let mut w3 = spawn(&e, &["wait-for", "from-pane"]);
-    std::thread::sleep(Duration::from_secs(1));
+    let mut w3 = spawn_waiting(&e, &["wait-for", "from-pane"]);
     e.run(&["send-keys", "-t", "wf:", &format!("{BIN} wait-for -S from-pane"), "Enter"]);
     t.ok("a program in a pane can signal", ended(&mut w3, 10));
 
@@ -137,9 +145,9 @@ fn b_compat() {
     e.run(&["send-keys", "-t", "pp:", "echo piped-marker-2", "Enter"]);
     t.ok("-o leaves the pipe that is open", piped("piped-marker-2") && !e.path("ignored.txt").exists());
     e.run(&["pipe-pane", "-t", "pp:"]);
-    std::thread::sleep(Duration::from_secs(1));
     e.run(&["send-keys", "-t", "pp:", "echo after-close", "Enter"]);
-    std::thread::sleep(Duration::from_secs(1));
+    // the pane shows the text; whatever was still piped would have been written by now
+    assert!(e.shows("pp:", "^after-close$"), "the pane did not show its text");
     t.ok("no command closes the pipe", !e.read("piped.txt").contains("after-close"));
     e.run(&["pipe-pane", "-I", "-t", "pp:", "printf 'echo typed-by-pipe-%s\\n' 7"]);
     t.ok("-I types the output of the command into the pane", e.shows("pp:", "^typed-by-pipe-7$"));

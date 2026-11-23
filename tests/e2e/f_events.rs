@@ -59,7 +59,24 @@ fn f_events() {
 
     t.section("a reader that stalls");
     let mut stalled = e.command(BIN).args(["events", "--types", "after-set-option"]).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn().unwrap();
-    std::thread::sleep(Duration::from_secs(1));
+    // Its first line shows the server has it as a subscriber; after that it is not read again. The
+    // reader stays open (it goes into `_unread`): a closed pipe would be a different way to go.
+    let (first_line, got) = std::sync::mpsc::channel();
+    let mut stalled_out = std::io::BufReader::new(stalled.stdout.take().unwrap());
+    std::thread::spawn(move || {
+        let mut line = String::new();
+        let _ = std::io::BufRead::read_line(&mut stalled_out, &mut line);
+        let _ = first_line.send(stalled_out);
+    });
+    let mut probes = 0;
+    let _unread = loop {
+        probes += 1;
+        e.run(&["set", "-g", "@stall-probe", &probes.to_string()]);
+        if let Ok(reader) = got.recv_timeout(Duration::from_millis(500)) {
+            break reader;
+        }
+        assert!(probes < 60, "the stalled reader was never told of an event");
+    };
     // The server drops a subscriber once 64 KB is queued behind the kernel's socket buffers and the
     // pipe. Linux's default 208 KB per socket swallows 3000 events, so it gets four times more.
     let pad = "x".repeat(200);
@@ -92,7 +109,8 @@ fn f_events() {
     let r = e.run(&["agent", "prompt", &ap, "hello", "world"]);
     t.ok("typed when it is on", r.all().lines().any(|l| l.starts_with("sent")) && wait(10, &|| has_line(&e.read("agent.got"), "hello world")));
     t.ok("the agent took it up", wait(10, &|| e.out(&["agent", "get", &ap]).contains("state: working")));
-    std::thread::sleep(Duration::from_secs(2));
+    // the turn lasts a second; the next prompt is for an agent that is waiting again
+    t.ok("and its turn ends", wait(10, &|| e.out(&["agent", "get", &ap]).contains("state: done")));
     let began = Instant::now();
     let r = e.run(&["agent", "prompt", "--wait", "--timeout", "20", &ap, "second"]);
     let took = began.elapsed();

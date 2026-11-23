@@ -23,7 +23,6 @@ fn m8_copy() {
     assert!(e.shows_line("0:", "copyme-42"));
     c.type_chunks(&["\x02[", "?copyme-4\r", "v$y"], GAP);
     c.send_str("echo pasted:");
-    std::thread::sleep(GAP);
     c.type_chunks(&["\x02]", "\r"], GAP);
     t.ok("yank then paste buffer types the copied text", c.wait_for("pasted:copyme-42", LONG));
     c.type_chunks(&["\x1b[<64;10;5M"], GAP);

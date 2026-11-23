@@ -36,7 +36,7 @@ fn q_relative() {
         c.send(b"\x1b[1;6D");
         t.ok("again", wait_until(LONG, || order(&e) == "c a b " && current(&e) == "c"));
         c.send(b"\x1b[1;6D");
-        std::thread::sleep(Duration::from_millis(800));
+        c.sync();
         t.ok("at the first window it stays and nothing is lost", order(&e) == "c a b ");
         c.send(b"\x1b[1;6C");
         t.ok("swap-window -t +1 trades with the window after", wait_until(LONG, || order(&e) == "a c b " && current(&e) == "c"));
@@ -58,7 +58,6 @@ fn q_relative() {
     let out = e.with_client("rel", |c| {
         c.send(b"\x02T");
         c.wait_seen("sessions and windows", LONG);
-        std::thread::sleep(Duration::from_millis(300));
         c.send(b"\x1b");
     });
     t.ok("choose-tree -Zw opens the window picker", out.contains("sessions and windows"));

@@ -46,7 +46,7 @@ fn q_spawnmin() {
     let user = e.all(&["split-window", "-h", "-t", "%1", "-P", "-F", "#{pane_id}"]);
     t.matches("a split you type yourself has no such limit", "^%[0-9]*$", user.lines().next().unwrap_or(""));
     e.run(&["kill-pane", "-t", user.lines().next().unwrap_or("")]);
-    std::thread::sleep(Duration::from_millis(500));
+    assert!(wait_until(Duration::from_secs(10), || e.out(&["list-panes", "-F", "#{pane_id}"]).lines().count() == 3), "the pane did not go");
     e.run(&["set", "-g", "pane-min-width", "10"]);
     let (rc, o) = in_pane(&e, "1", &format!("{BIN} split-window -h -P -F '#{{pane_id}}'"));
     t.ok("with a lower pane-min-width the same split is allowed", rc == 0 && o.lines().any(|l| l.starts_with('%')));

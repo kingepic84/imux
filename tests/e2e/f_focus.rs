@@ -48,21 +48,25 @@ fn f_focus() {
     t.ok("off is the old behavior", !has("gone"));
 
     t.section("focus-events");
-    e.run(&["new-window", "-t", "f", "-n", "ask", &format!("printf '\\033[?1004h'; stty raw -echo; head -c 6 | od -c >{d}/got.out; sleep 30")]);
-    std::thread::sleep(Duration::from_secs(1));
+    e.run(&["new-window", "-t", "f", "-n", "ask", &format!("printf '\\033[?1004h'; stty raw -echo; touch {d}/ask.ready; head -c 6 | od -c >{d}/got.out; sleep 30")]);
+    let reported = || {
+        let g = e.read("got.out");
+        regex_lite::Regex::new("033 +\\[ +O").unwrap().is_match(&g) && regex_lite::Regex::new("033 +\\[ +I").unwrap().is_match(&g)
+    };
+    let mut got = false;
     e.with_client("f", |c| {
-        std::thread::sleep(Duration::from_secs(1));
-        c.send(b"\x1b[O");
-        std::thread::sleep(Duration::from_secs(1));
-        c.send(b"\x1b[I");
-        std::thread::sleep(Duration::from_secs(1));
+        assert!(wait_until(Duration::from_secs(15), || e.path("ask.ready").exists()), "the program did not start");
+        // the program turned focus reports on a moment before it said so: the terminal may not have
+        // taken that in yet, so a pair of reports is sent again until one has reached the program
+        got = wait_until(Duration::from_secs(15), || {
+            c.send(b"\x1b[O");
+            c.send(b"\x1b[I");
+            std::thread::sleep(Duration::from_millis(250));
+            reported()
+        });
     });
     t.ok("client-focus-out fires when the terminal loses the focus", seen("client-focus-out"));
     t.ok("client-focus-in fires when it gets it back", seen("client-focus-in"));
-    let got = wait_until(Duration::from_secs(10), || {
-        let g = e.read("got.out");
-        regex_lite::Regex::new("033 +\\[ +O").unwrap().is_match(&g) && regex_lite::Regex::new("033 +\\[ +I").unwrap().is_match(&g)
-    });
     t.ok("the reports reach a program that asked for them", got);
     e.run(&["split-window", "-d", "-t", "f:ask"]);
     let ids = e.out(&["list-panes", "-t", "f:ask", "-F", "#{pane_id}"]);

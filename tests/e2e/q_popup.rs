@@ -8,10 +8,24 @@ use crate::support::*;
 use std::time::Duration;
 
 const LONG: Duration = Duration::from_secs(15);
-const GAP: Duration = Duration::from_millis(400);
 
-fn nap(d: Duration) {
-    std::thread::sleep(d);
+/// How many popups the server has closed so far, and how many programs of popups have ended and
+/// been kept on the screen (the server notes both in its log). A step that must wait for a popup to
+/// go, or for its program to end, waits for the count to grow.
+fn closed(e: &Env) -> usize {
+    e.server_log().lines().filter(|l| l.contains("\"popup ") && l.ends_with(" closed\"}")).count()
+}
+
+fn kept(e: &Env) -> usize {
+    e.server_log().lines().filter(|l| l.contains("program ended with status") && l.contains(", kept")).count()
+}
+
+fn closed_after(e: &Env, before: usize) -> bool {
+    wait_until(LONG, || closed(e) > before)
+}
+
+fn kept_after(e: &Env, before: usize) -> bool {
+    wait_until(LONG, || kept(e) > before)
 }
 
 /// A client on session `pop`; the closure drives it; then it goes away (a popup that is still open
@@ -19,9 +33,8 @@ fn nap(d: Duration) {
 fn with_client(e: &Env, f: impl FnOnce(&mut Client)) -> String {
     let mut c = e.client(100, 30, &["attach", "-t", "pop"]);
     assert!(e.has_client(), "the client did not attach");
-    nap(Duration::from_millis(700));
+    assert!(c.wait_drawn(LONG), "the client drew nothing");
     f(&mut c);
-    nap(Duration::from_millis(400));
     c.send(b"\x02d");
     if c.wait_exit(Duration::from_secs(3)).is_none() {
         c.kill();
@@ -60,20 +73,19 @@ fn q_popup() {
         c.send(b"\x02p");
         c.wait_seen("POPUP-OUT", LONG);
         // its program sleeps for 30 seconds; close the popup instead of waiting that long
-        nap(GAP);
+        let n = closed(&e);
         e.run(&["display-popup", "-C"]);
-        nap(GAP);
+        assert!(closed_after(&e, n), "the popup did not close");
     });
     t.ok("a popup shows its title and what its program printed", out.contains("pop") && out.contains("POPUP-OUT"));
 
     // typed keys go to the program of the popup
     with_client(&e, |c| {
+        let n = closed(&e);
         c.send(b"\x02c");
-        nap(GAP * 2);
         c.send(b"hello\r");
-        nap(GAP);
         c.send(b"\x04");
-        nap(GAP * 2);
+        assert!(closed_after(&e, n), "the popup did not close");
         c.send_str("echo ZZTYPED\r");
         t.ok("the end of the program closes a popup with -E and the keys go back to the pane", e.shows_line("%0", "ZZTYPED"));
     });
@@ -82,21 +94,23 @@ fn q_popup() {
 
     // a popup whose program is over at once is gone
     with_client(&e, |c| {
+        let n = closed(&e);
         c.send(b"\x02f");
-        nap(GAP * 3);
+        assert!(closed_after(&e, n), "the popup did not close");
         c.send_str("echo ZZFAST\r");
         t.ok("a popup whose program is over at once is gone", e.shows_line("%0", "ZZFAST"));
     });
 
     // without -E the popup stays
     let out = with_client(&e, |c| {
+        let (n, k) = (closed(&e), kept(&e));
         c.send(b"\x02s");
         c.wait_seen("STAYED", LONG);
-        nap(GAP);
+        assert!(kept_after(&e, k), "the program of the popup did not end");
         c.send_str("echo ZZGONE\r");
-        nap(GAP * 2);
         c.send(b"\x1b");
-        nap(GAP * 2);
+        c.escape_pause();
+        assert!(closed_after(&e, n), "Escape did not close the popup");
         c.send_str("echo ZZBACK\r");
         t.ok("Escape closes it", e.shows_line("%0", "ZZBACK"));
     });
@@ -105,12 +119,13 @@ fn q_popup() {
 
     // -E -E keeps a failed popup
     with_client(&e, |c| {
+        let (n, k) = (closed(&e), kept(&e));
         c.send(b"\x02x");
-        nap(GAP * 3);
+        assert!(kept_after(&e, k), "the failed popup was not kept");
         c.send_str("echo ZZFAIL\r");
-        nap(GAP * 2);
         c.send(b"\x1b");
-        nap(GAP * 2);
+        c.escape_pause();
+        assert!(closed_after(&e, n), "Escape did not close the popup");
         c.send_str("echo ZZOK\r");
         t.ok("and Escape closes it", e.shows_line("%0", "ZZOK"));
     });
@@ -118,31 +133,32 @@ fn q_popup() {
 
     // -E -E closes a successful popup
     with_client(&e, |c| {
+        let n = closed(&e);
         c.send(b"\x02y");
-        nap(GAP * 3);
+        assert!(closed_after(&e, n), "the popup did not close");
         c.send_str("echo ZZSUCCESS\r");
         t.ok("-E -E closes a popup whose program succeeded", e.shows_line("%0", "ZZSUCCESS"));
     });
 
     // -e and -d
     with_client(&e, |c| {
+        let n = closed(&e);
         c.send(b"\x02e");
-        nap(GAP * 4);
+        assert!(closed_after(&e, n), "the popup did not close");
     });
     t.ok("-e is a variable of the program and -d its directory", e.read("env.out").lines().any(|l| l == "FOO=bar") && e.read("pwd.out").contains("tmp"));
 
     // a second popup, the three-prefix escape hatch
     let out = with_client(&e, |c| {
+        let n = closed(&e);
         c.send(b"\x02w");
-        nap(GAP * 3);
+        assert!(c.wait_screen("┌", LONG), "the popup did not open");
         let r = e.run_for(&["display-popup", "-E", "echo SECONDX"], Duration::from_secs(8));
         e.write("second.rc", &format!("{}\n", r.code));
         c.send(b"\x02\x02");
-        nap(GAP);
         c.send_str("echo ZZSTILL\r");
-        nap(GAP);
         c.send(b"\x02\x02\x02");
-        nap(GAP * 2);
+        assert!(closed_after(&e, n), "three presses of the prefix did not close it");
         c.send_str("echo ZZCHORD\r");
         t.ok("three presses of the prefix close it whatever the program does", e.shows_line("%0", "ZZCHORD"));
     });
@@ -151,10 +167,11 @@ fn q_popup() {
 
     // display-popup -C
     with_client(&e, |c| {
+        let n = closed(&e);
         c.send(b"\x02w");
-        nap(GAP * 3);
+        assert!(c.wait_screen("┌", LONG), "the popup did not open");
         e.run(&["display-popup", "-C"]);
-        nap(GAP * 2);
+        assert!(closed_after(&e, n), "the popup did not close");
         c.send_str("echo ZZCLOSED\r");
         t.ok("display-popup -C closes it", e.shows_line("%0", "ZZCLOSED"));
     });

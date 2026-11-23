@@ -24,7 +24,7 @@ fn until_active(e: &Env, want: &str) -> bool {
 fn client(e: &Env) -> Client {
     let c = e.client(100, 30, &["attach", "-t", "s"]);
     assert!(e.has_client(), "the client did not attach");
-    std::thread::sleep(Duration::from_millis(700));
+    assert!(c.wait_drawn(LONG), "the client drew nothing");
     c
 }
 
@@ -55,7 +55,7 @@ fn q_status() {
     t.ok("the panes get every row but the bar", until_height(&e, "29"));
     e.run(&["set", "-g", "status-position", "top"]);
     t.ok("a top bar takes the same one row", until_height(&e, "29"));
-    std::thread::sleep(Duration::from_secs(1));
+    e.barrier(&c, "s");
     e.run(&["set", "-g", "status", "off"]);
     t.ok("no bar gives the panes the whole screen", until_height(&e, "30"));
     e.run(&["set", "-g", "status", "on"]);
@@ -71,7 +71,7 @@ fn q_status() {
     e.run(&["set", "-g", "status", "off"]);
     let c = client(&e);
     t.ok("its panes have all 30 rows", until_height(&e, "30"));
-    std::thread::sleep(Duration::from_secs(1));
+    e.barrier(&c, "s");
     let out = leave(&e, c);
     t.ok("the bar text is nowhere in its output", !out.contains("BAR"));
     e.run(&["set", "-g", "status", "on"]);
@@ -87,7 +87,7 @@ fn q_status() {
     e.run(&["select-window", "-t", "s:one"]);
     let mut c = client(&e);
     c.send(b"\x1b[<0;9;30M\x1b[<0;9;30m");
-    std::thread::sleep(Duration::from_secs(1));
+    c.sync();
     t.ok("the same click on the last row (now a pane row) selects nothing", active(&e).contains("one=1"));
     leave(&e, c);
 

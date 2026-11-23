@@ -45,7 +45,6 @@ fn b_startup() {
         }
         e.kill_server();
         drop(clients);
-        std::thread::sleep(Duration::from_millis(200));
     }
     println!("slowest round: {:.1}s", slowest.as_secs_f64());
     t.finish();

@@ -24,13 +24,14 @@ fn q_history() {
     let first = names().into_iter().find(|n| n.ends_with(".imux")).unwrap_or_default();
     let mode = std::fs::metadata(h.join(&first)).map(|m| m.permissions().mode() & 0o777).unwrap_or(0);
     t.ok("its file is private", mode == 0o600);
+    // each change of state makes a new rolling copy once the interval has passed since the last one
+    let newest = || names().into_iter().rfind(|n| n.ends_with(".imux")).unwrap_or_default();
     for n in ["w1", "w2", "w3"] {
-        std::thread::sleep(Duration::from_millis(1600));
+        let before = newest();
         e.run(&["new-window", "-t", "alpha:", "-n", n]);
-        wait_until(Duration::from_secs(3), || !names().is_empty());
+        assert!(wait_until(Duration::from_secs(40), || newest() != before), "no rolling copy was made for {n}");
     }
-    std::thread::sleep(Duration::from_millis(2500));
-    t.ok("the count limits the copies", count() == 2);
+    t.ok("the count limits the copies", wait_until(Duration::from_secs(15), || count() == 2));
     let listing = e.out(&["snapshots", "--history"]);
     t.ok("imux snapshots --history lists them", listing.lines().filter(|l| l.starts_with("history/")).count() == 2);
     t.ok("the newest copy shows the session", listing.lines().next().unwrap_or("").contains("alpha"));
@@ -41,7 +42,6 @@ fn q_history() {
     t.ok("and no autosave", !e.path("state/autosave.imux").exists());
     e.run(&["new-session", "-d", "-s", "beta"]);
     e.run(&["set", "-g", "autosave-history", "10"]);
-    std::thread::sleep(Duration::from_secs(1));
     t.ok("a new server does not restore a rolling copy by itself", !sess("alpha"));
     e.run(&["restore", &newest]);
     t.ok("restore history/NAME brings the session back", sess("alpha"));
@@ -57,7 +57,9 @@ fn q_history() {
         "an autosave is written",
         wait_until(Duration::from_secs(15), || std::fs::metadata(e.path("state/autosave.imux")).map(|m| m.len() > 0).unwrap_or(false)),
     );
-    std::thread::sleep(Duration::from_secs(1));
+    // the next change of state is written to the autosave, and a rolling copy would be written with it
+    e.run(&["new-window", "-t", "gamma:", "-n", "marker"]);
+    assert!(wait_until(Duration::from_secs(15), || std::fs::read_to_string(e.path("state/autosave.imux")).unwrap_or_default().contains("marker")), "the autosave did not follow the change");
     t.ok("no rolling copy is made", count() == 0 && e.out(&["snapshots", "--history"]) == "no rolling copies");
     e.kill_server();
     t.finish();

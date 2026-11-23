@@ -36,7 +36,11 @@ fn w_remove() {
 
     t.section("a clean worktree is removed, its window closes, its branch stays");
     // The client has to have finished attaching before there is a session to open a window in.
-    wait_until(Duration::from_secs(15), || !run(&["worktree", "ABC-1"]).contains("no session to open"));
+    // (before that there is no server at all, or no session in it)
+    wait_until(Duration::from_secs(15), || {
+        let r = run(&["worktree", "ABC-1"]);
+        !r.contains("no session to open") && !r.contains("no server running")
+    });
     t.ok("the window is open", wait_until(Duration::from_secs(10), || windows() == "2"));
     let r = run(&["worktree-remove", "ABC-1"]);
     t.ok("it says what was removed", r.contains("removed worktree"));

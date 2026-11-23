@@ -65,17 +65,15 @@ bind L run-shell -C "set -g status-right #{{c:window_name}}"
     );
     t.section("the socket cannot run shell commands");
     let o1 = e.run(&["run-shell", &format!("echo sock > {d}/sock.out")]).all();
-    std::thread::sleep(Duration::from_millis(500));
     t.ok("run-shell from imux <command> is refused", o1.contains("only a configuration") && !e.path("sock.out").exists());
     let o2 = e.run(&["if-shell", "true", &format!("run-shell 'echo sock > {d}/sock2.out'")]).all();
-    std::thread::sleep(Duration::from_millis(500));
     t.ok("if-shell from imux <command> is refused", o2.contains("only a configuration") && !e.path("sock2.out").exists());
     t.section("keys: a name from the pane");
     let left_before = e.out(&["show-options", "-v", "status-left"]);
     let right_before = e.out(&["show-options", "-v", "status-right"]);
     let mut c = e.client(100, 30, &["attach", "-t", "s"]);
     t.ok("attached", e.has_client());
-    std::thread::sleep(Duration::from_millis(700));
+    assert!(c.wait_drawn(Duration::from_secs(15)), "the client drew nothing");
     c.send(b"\x02T");
     t.ok(
         "a window name in shell text is refused",

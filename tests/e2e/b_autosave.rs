@@ -35,6 +35,8 @@ fn b_autosave() {
 
     t.section("kill-server while a write is in flight");
     e.run(&["new-window", "-t", "w", "-n", "again"]);
+    // The write of this change starts when the autosave interval (1 s) has passed and then takes the
+    // 3 s the test asks for: two seconds on is in the middle of it. Nothing shows a write begin.
     std::thread::sleep(Duration::from_secs(2));
     e.run(&["kill-server"]);
     t.ok("the server ends", wait_until(Duration::from_secs(15), || e.all(&["ls"]).contains("no server running")));

@@ -26,7 +26,7 @@ fn m2_smoke() {
 
     let mut b = e.client(80, 24, &["attach"]);
     assert!(e.has_client());
-    std::thread::sleep(Duration::from_millis(700));
+    assert!(b.wait_drawn(LONG), "the client drew nothing");
     b.send_str("echo second-$FOO\r");
     t.ok("reattached shell kept its environment", b.wait_for("second-persist-21", LONG));
     b.send_str("exit\r");

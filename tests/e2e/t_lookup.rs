@@ -17,7 +17,6 @@ fn leave(e: &Env, mut c: Client) {
     c.send(b"\x02d");
     c.wait_exit(LONG);
     e.kill_server();
-    std::thread::sleep(Duration::from_millis(300));
 }
 
 #[test]
@@ -54,18 +53,15 @@ fn t_lookup() {
     assert!(e.shows_line("w:", "uniquemark-77"));
     c.send(b"\x02c");
     assert!(wait_until(LONG, || e.out(&["list-windows"]).lines().count() == 2));
-    std::thread::sleep(GAP);
     c.type_chunks(&["\x02:"], GAP);
     c.send_str("rename-window zzzname\r");
     assert!(wait_until(LONG, || e.out(&["list-windows", "-F", "#{window_name}"]).contains("zzzname")));
     c.type_chunks(&["\x02f"], GAP);
     c.send_str("uniquemark\r");
-    std::thread::sleep(GAP);
     c.send_str("echo screen-$IMUX_PANE_ID\r");
     t.ok("a text on a window's screen finds that window", c.wait_seen("screen-0", LONG));
     c.type_chunks(&["\x02f"], GAP);
     c.send_str("zzzname\r");
-    std::thread::sleep(GAP);
     c.send_str("echo name-$IMUX_PANE_ID\r");
     t.ok("a window name finds the window", c.wait_seen("name-1", LONG));
     c.type_chunks(&["\x02f"], GAP);
@@ -77,7 +73,6 @@ fn t_lookup() {
     let mut c = new_client(&e);
     c.type_chunks(&["export S=one\r", "\x02N"], GAP);
     assert!(wait_until(LONG, || e.out(&["ls"]).lines().count() == 2), "the new session did not appear");
-    std::thread::sleep(GAP);
     c.type_chunks(&["export S=two\r", "\x02L"], GAP);
     c.send_str("echo session-$S\r");
     t.ok("L goes back to the last session", c.wait_seen("session-one", LONG));
@@ -86,7 +81,6 @@ fn t_lookup() {
     t.ok("and again goes forward", c.wait_seen("session-two", LONG));
     c.type_chunks(&["\x02c", "\x02'"], GAP);
     c.send_str("0\r");
-    std::thread::sleep(GAP);
     c.send_str("echo number-$IMUX_PANE_ID\r");
     t.ok("' selects a window by number", c.wait_seen("number-[0-9]", LONG));
     c.type_chunks(&["\x02r"], GAP);

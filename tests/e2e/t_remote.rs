@@ -7,14 +7,10 @@ use std::time::Duration;
 
 const LONG: Duration = Duration::from_secs(15);
 
-fn nap(ms: u64) {
-    std::thread::sleep(Duration::from_millis(ms));
-}
-
 fn first_client(e: &Env, args: &[&str]) -> Client {
     let c = e.client(100, 30, args);
     assert!(e.has_client(), "the client did not attach");
-    nap(800);
+    assert!(c.wait_drawn(LONG), "the client drew nothing");
     c
 }
 
@@ -76,7 +72,7 @@ fn t_remote() {
     e.run(&["set", "-g", "command-from-panes", "off"]);
     e.run(&["send-keys", "-t", "%0", "rm -f \"$TMPDIR/inside.txt\"; "]);
     e.run(&["send-keys", "-t", "%0", "$BIN send-keys -t %0 x > \"$TMPDIR/inside.txt\" 2>&1; $BIN list-windows -F \"inside-#{window_name}\" >> \"$TMPDIR/inside.txt\" 2>&1; $BIN capture-pane -p -t %0 >> \"$TMPDIR/inside.txt\" 2>&1", "Enter"]);
-    assert!(wait_until(LONG, || e.read("inside.txt").contains("inside-renamed")), "the pane did not write its file");
+    assert!(wait_until(LONG, || { let t = e.read("inside.txt"); t.contains("inside-renamed") && t.contains("inside.txt") }), "the pane did not write all of its file");
     let inside = e.read("inside.txt");
     t.matches("typing into panes is refused to a program in a pane", "not allowed from inside a pane", &inside);
     t.matches("looking is allowed", "inside-renamed", &inside);
@@ -84,14 +80,12 @@ fn t_remote() {
     a.send(b"\x02d");
     a.wait_exit(LONG);
     e.kill_server();
-    nap(500);
 
     t.section("panes: select-pane, kill-pane, select-window");
     {
         let mut c = first_client(&e, &["new", "-s", "w"]);
         assert!(e.ready("w:", Duration::from_millis(600)));
         c.send_str("echo up\r");
-        nap(400);
         c.send(b"\x02%");
         assert!(wait_until(LONG, || e.out(&["list-panes", "-t", "w:0"]).lines().count() == 2), "the split did not happen");
         c.send(b"\x02c");
@@ -117,7 +111,6 @@ fn t_remote() {
         c.wait_exit(LONG);
     }
     e.kill_server();
-    nap(500);
 
     t.section("command-from-panes on");
     e.write("imux.conf", "set copy-command \"\"\nset command-from-panes on\n");

@@ -22,9 +22,9 @@ fn m9b_status() {
     assert!(wait_until(LONG, || e.out(&["list-windows"]).lines().count() == 2));
     c.type_chunks(&["\x01:"], Duration::from_millis(500));
     c.send_str("display \"hello msg\"\r");
-    std::thread::sleep(Duration::from_millis(500));
-    c.send_str("\x011");
+    // the message is drawn before the next key changes the screen
     t.ok("example config: display message", c.wait_seen("hello msg", LONG));
+    c.send_str("\x011");
     if zsh.is_some() {
         t.ok("example config: current tab text", c.wait_seen(" 1  zsh ", LONG));
         t.ok("example config: second tab text", c.wait_seen(" 2  zsh ", LONG));

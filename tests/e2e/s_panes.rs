@@ -92,9 +92,18 @@ fn s_panes() {
     t.section("events escape bidirectional characters");
     let ev = e.path("ev.txt");
     let mut child = e.command(BIN).args(["events", "--types", "window-renamed"]).stdout(Stdio::from(std::fs::File::create(&ev).unwrap())).stderr(Stdio::null()).spawn().unwrap();
-    std::thread::sleep(Duration::from_secs(1));
+    // renames until the stream has its first line, which shows the server has the subscriber
+    let size = || std::fs::metadata(&ev).map(|m| m.len()).unwrap_or(0);
+    let mut probes = 0;
+    while size() == 0 {
+        probes += 1;
+        assert!(probes < 60, "the event stream never carried an event");
+        e.run(&["rename-window", "-t", "w", &format!("probe{probes}")]);
+        wait_until(Duration::from_millis(300), || size() > 0);
+    }
+    let lines_before = lines_of(&ev);
     e.run(&["rename-window", "-t", "w", "x\u{202e}y"]);
-    std::thread::sleep(Duration::from_secs(1));
+    assert!(wait_until(Duration::from_secs(10), || lines_of(&ev) > lines_before), "the rename made no event");
     let _ = child.kill();
     let _ = child.wait();
     let events = std::fs::read(&ev).unwrap_or_default();
@@ -102,14 +111,17 @@ fn s_panes() {
     t.ok("no bidirectional character in the event stream", !events.windows(3).any(|w| w == b"\xe2\x80\xae"));
 
     t.section("a pane that never reads its input cannot freeze the server");
-    e.run(&["new-window", "-d", "-t", "w", "stty -icanon -echo; i=0; while [ $i -lt 4000 ]; do printf '\\033[c\\033[6n'; i=$((i+1)); done; sleep 120"]);
-    std::thread::sleep(Duration::from_secs(3));
+    let filler = e.out(&["new-window", "-d", "-P", "-F", "#{pane_id}", "-t", "w", "stty -icanon -echo; i=0; while [ $i -lt 4000 ]; do printf '\\033[c\\033[6n'; i=$((i+1)); done; sleep 120"]);
+    // the server is asked again and again while the pane fills its own input queue (a few hundred
+    // replies fill it), until the pane has said all it has to say (it ends in `sleep`), but at least
+    // four times and at most forty
     let mut stuck = false;
-    for _ in 0..4 {
+    let mut asked = 0;
+    while asked < 4 || (asked < 40 && e.var(&filler, "#{pane_current_command}") != "sleep") {
         if !e.run_for(&["ls"], Duration::from_secs(5)).success() {
             stuck = true;
         }
-        std::thread::sleep(Duration::from_secs(1));
+        asked += 1;
     }
     t.ok("the server answered while a pane filled its own input queue", !stuck);
     type_line(&e, "echo STILLHERE");

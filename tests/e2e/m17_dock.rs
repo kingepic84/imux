@@ -27,7 +27,7 @@ fn m17_dock() {
     t.ok("panes start at the full width", c.wait_for("before-100", LONG));
     c.type_chunks(&["\x02c"], GAP);
     c.send_str(&format!("{}\r", p(&agent)));
-    std::thread::sleep(Duration::from_secs(1));
+    assert!(wait_until(LONG, || e.all(&["agent", "get", "1"]).contains("state: working\n")), "the agent never reported");
     c.type_chunks(&["\x020", "\x02A"], GAP);
     t.ok("the dock lists the agent with its message", c.wait_seen("dock-msg", LONG));
     t.ok("the dock has a title", c.wait_seen("agents", LONG));
@@ -40,7 +40,6 @@ fn m17_dock() {
     c.send(b"\x02d");
     c.wait_exit(LONG);
     e.kill_server();
-    std::thread::sleep(Duration::from_millis(500));
 
     t.section("Enter in the dock jumps to the agent and the dock stays");
     let got = e.path("got.txt");
@@ -49,7 +48,7 @@ fn m17_dock() {
     assert!(e.ready("e:", Duration::from_millis(600)));
     c.type_chunks(&["\x02c"], GAP);
     c.send_str(&format!("{} {}\r", p(&reader), p(&got)));
-    std::thread::sleep(Duration::from_secs(1));
+    assert!(wait_until(LONG, || e.all(&["agent", "get", "1"]).contains("state: blocked\n")), "the reader never reported blocked");
     c.type_chunks(&["\x02c", "\x02A", "\r"], GAP);
     c.send_str("hello-from-the-dock\r");
     t.ok("Enter jumps to the first row and keys go to that pane", wait_until(LONG, || std::fs::read_to_string(&got).unwrap_or_default() == "hello-from-the-dock"));

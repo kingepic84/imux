@@ -24,8 +24,7 @@ fn q_fmtlookup() {
     let mut seen_t = false;
     e.with_client("s", |c| {
         c.send(b"\x02y");
-        std::thread::sleep(Duration::from_millis(800));
-        seen_t = c.text().contains("T[hello|bottom|envvalue]") || c.screen_text().contains("T[hello|bottom|envvalue]");
+        seen_t = c.wait_seen(r"T\[hello\|bottom\|envvalue\]", LONG);
     });
     t.ok("a menu title reads a user option, an option name and the environment", seen_t);
     e.kill_server();

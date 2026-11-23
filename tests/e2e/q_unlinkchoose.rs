@@ -31,7 +31,6 @@ fn q_unlinkchoose() {
     let text = e.with_client("uq", |c| {
         c.send(b"\x02S");
         c.wait_seen("sessions", Duration::from_secs(5));
-        std::thread::sleep(Duration::from_millis(500));
         c.send(b"\x1b");
     });
     t.ok("choose-session opens the session list, not the tree", text.contains("sessions") && !text.contains("sessions and windows"));

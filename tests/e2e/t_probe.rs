@@ -11,11 +11,10 @@ fn run_client(e: &Env) -> Client {
     assert!(e.ready("p:", Duration::from_millis(600)));
     c.send_str("echo up-$((1+2))\r");
     assert!(c.wait_for("up-3", LONG));
-    std::thread::sleep(Duration::from_millis(500));
+    e.barrier(&c, "p");
     c.send(b"\x02d");
     c.wait_exit(LONG);
     e.kill_server();
-    std::thread::sleep(Duration::from_millis(500));
     c
 }
 

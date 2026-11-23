@@ -6,10 +6,6 @@ use std::time::Duration;
 
 const LONG: Duration = Duration::from_secs(10);
 
-fn nap(ms: u64) {
-    std::thread::sleep(Duration::from_millis(ms));
-}
-
 fn names(e: &Env) -> String {
     e.out(&["list-windows", "-F", "#{window_name}"]).lines().collect::<Vec<_>>().join(" ")
 }
@@ -26,9 +22,8 @@ fn current_is(e: &Env, want: &str) -> bool {
 fn with_client(e: &Env, f: impl FnOnce(&mut Client)) -> String {
     let mut c = e.client(100, 30, &["attach", "-t", "bnd"]);
     assert!(e.has_client(), "the client did not attach");
-    nap(700);
+    assert!(c.wait_drawn(LONG), "the client drew nothing");
     f(&mut c);
-    nap(300);
     c.send(b"\x02d");
     if c.wait_exit(Duration::from_secs(3)).is_none() {
         c.kill();
@@ -71,7 +66,6 @@ fn q_bindcmds() {
     let out = with_client(&e, |c| {
         c.send(b"\x02a");
         c.wait_seen("name:", LONG);
-        nap(300);
         c.send_str("typed\r");
         t.ok("what is typed replaces %% in the template", current_is(&e, "typed"));
     });
@@ -79,40 +73,35 @@ fn q_bindcmds() {
 
     with_client(&e, |c| {
         c.send(b"\x02a");
-        nap(500);
         c.send_str("nope");
-        nap(300);
         c.send(b"\x1b");
-        nap(600);
+        c.escape_pause();
+        c.sync();
     });
     t.ok("Escape cancels and nothing runs", current(&e) == "typed");
 
     with_client(&e, |c| {
         c.send(b"\x02i");
-        nap(500);
         c.send(b"\r");
         t.ok("the initial text is what runs when Enter is pressed at once", current_is(&e, "pre"));
     });
 
     with_client(&e, |c| {
         c.send(b"\x02o");
-        nap(500);
         c.send(b"z");
         t.ok("-1 takes one key and runs without Enter", current_is(&e, "kz"));
     });
 
     with_client(&e, |c| {
         c.send(b"\x02y");
-        nap(500);
         c.send(b"n");
-        nap(700);
+        c.sync();
     });
     t.ok("a confirmation answered with anything but y does nothing", current(&e) == "kz");
 
     let out = with_client(&e, |c| {
         c.send(b"\x02y");
         c.wait_seen("sure\\?", LONG);
-        nap(300);
         c.send(b"y");
         t.ok("a confirmation answered with y runs the command", current_is(&e, "sure"));
     });

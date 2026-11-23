@@ -7,10 +7,6 @@ use std::time::Duration;
 
 const LONG: Duration = Duration::from_secs(10);
 
-fn nap(ms: u64) {
-    std::thread::sleep(Duration::from_millis(ms));
-}
-
 fn log_has(e: &Env, line: &str) -> bool {
     wait_until(LONG, || e.read("log").lines().any(|l| l == line))
 }
@@ -65,7 +61,6 @@ fn q_mouse() {
             format!("\x1b[<2;{0};5M\x1b[<2;{0};5m", w0 + 1),
         ] {
             c.send_str(&seq);
-            nap(400);
         }
         t.ok("a press with the right button, with the pointer's place in the pane and the program's mouse flag", log_has(&e, "DOWN3:4:4:0"));
         t.ok("the wheel over a pane", log_has(&e, "WHEELUP"));
@@ -78,9 +73,7 @@ fn q_mouse() {
 
     e.with_client("mo", |c| {
         c.send_str("\x1b[<0;5;5M");
-        nap(300);
         c.send_str("\x1b[<32;8;5M");
-        nap(300);
         c.send_str("\x1b[<0;8;5m");
         t.ok("a drag and the end of it, by the place the drag began", log_has(&e, "DRAG") && log_has(&e, "DRAGEND"));
     });
@@ -100,7 +93,8 @@ fn q_mouse() {
 
     let out = e.with_client("mo", |c| {
         c.send_str("\x1b[<1;30;10M\x1b[<1;30;10m");
-        nap(800);
+        // the menu is drawn before a key closes it
+        c.wait_seen("Mm", LONG);
         c.send(b"a");
         t.ok("a menu opened by a mouse key takes its keys, placed at the pointer", log_has(&e, "MENUA"));
     });

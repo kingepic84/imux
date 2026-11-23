@@ -18,7 +18,12 @@ fn q_inputoff() {
             if expect {
                 wait_until(Duration::from_secs(5), || seen(text));
             } else {
-                std::thread::sleep(Duration::from_millis(800));
+                // everything the client typed has been handled; text sent to the pane after that
+                // comes out of `cat` after anything that had got through
+                c.sync();
+                e.run(&["send-keys", "-t", "io:", "-l", "probe_after"]);
+                e.run(&["send-keys", "-t", "io:", "Enter"]);
+                wait_until(Duration::from_secs(5), || seen("probe_after"));
             }
         });
     };

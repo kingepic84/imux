@@ -29,13 +29,17 @@ fn prompt_bg(e: &Env, pane: &str, timeout: u32) -> Prompt {
         .unwrap();
     // The text has been typed once the pane echoes it; reports sent before that would not count.
     wait_until(Duration::from_secs(15), || e.capture(&format!("%{pane}")).contains("hello"));
-    std::thread::sleep(Duration::from_millis(300));
     Prompt { child, started: Instant::now() }
 }
 
 impl Prompt {
     fn finished(&mut self) -> bool {
         matches!(self.child.try_wait(), Ok(Some(_)))
+    }
+
+    /// Does it end within `window`? (Something that does not happen can only be watched for.)
+    fn finishes_within(&mut self, window: Duration) -> bool {
+        wait_until(window, || self.finished())
     }
 
     /// Wait up to `secs`; the exit status, standard output and standard error.
@@ -83,8 +87,8 @@ fn q_promptgate() {
     e.run(&["set", "-g", "agent-stall-time", "5"]);
     let mut pr = prompt_bg(&e, b, 30);
     report(&e, b, "done", "fake");
-    std::thread::sleep(Duration::from_secs(1));
-    t.ok("an idle or done after the text does not answer", !pr.finished());
+    // an answer would come out within a moment of the report
+    t.ok("an idle or done after the text does not answer", !pr.finishes_within(Duration::from_millis(500)));
     let (rc, _, err) = pr.result(12);
     e.run(&["set", "-g", "agent-stall-time", "60"]);
     t.ok("five seconds with no working or blocked is prompt_stalled", rc == 1 && err.contains("\"code\":\"prompt_stalled\""));
@@ -109,9 +113,11 @@ fn q_promptgate() {
 
     t.section("an agent that was working when the text came");
     report(&e, g, "working", "fake");
+    // the stall time is short here so that watching for a stall takes a few seconds, and not a minute
+    e.run(&["set", "-g", "agent-stall-time", "2"]);
     let mut pr = prompt_bg(&e, g, 30);
-    std::thread::sleep(Duration::from_secs(6));
-    t.ok("no stall while it works", !pr.finished());
+    t.ok("no stall while it works", !pr.finishes_within(Duration::from_secs(4)));
+    e.run(&["set", "-g", "agent-stall-time", "60"]);
     report(&e, g, "done", "fake");
     let (rc, out, _) = pr.result(5);
     t.ok("the end of the turn answers", rc == 0 && out.contains("\"state\":\"done\""));

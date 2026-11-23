@@ -48,9 +48,7 @@ fn q_blocks() {
     t.ok("braces and semicolons inside quotes stay in the quotes", k3.contains("F10") && k3.contains("a } b"));
     e.with_client("blk", |c| {
         c.send(b"\x02:");
-        std::thread::sleep(Duration::from_millis(300));
         c.send(b"rename-window { x }");
-        std::thread::sleep(Duration::from_millis(300));
         c.send(b"\r");
         wait_until(Duration::from_secs(5), || e.out(&["list-windows", "-F", "#{window_name}"]).lines().any(|l| l == "x"));
     });

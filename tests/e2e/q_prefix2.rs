@@ -8,11 +8,12 @@ fn windows(e: &Env) -> usize {
     e.out(&["list-windows", "-t", "s"]).lines().count()
 }
 
-/// A client that presses `keys` and goes away.
+/// A client that presses `keys` and goes away. The detach key goes after them on the same
+/// connection, so the server has handled `keys` first.
 fn keys(e: &Env, bytes: &[u8]) {
     e.with_client("s", |c| {
         c.send(bytes);
-        std::thread::sleep(Duration::from_millis(900));
+        c.sync();
     });
 }
 
@@ -32,7 +33,7 @@ fn q_prefix2() {
     e.run(&["bind-key", "x", "send-prefix", "-2"]);
     e.run(&["send-keys", "-t", "s:0", "C-u", "cat -v", "Enter"]);
     e.run(&["select-window", "-t", "s:0"]);
-    std::thread::sleep(Duration::from_secs(1));
+    assert!(wait_until(Duration::from_secs(10), || e.var("s:0", "#{pane_current_command}") == "cat"), "cat -v did not start in the pane");
     keys(&e, b"\x02x");
     t.ok("send-prefix -2 types the second prefix into the pane", wait_until(Duration::from_secs(5), || e.capture("s:0").contains("^A")));
     e.run(&["set", "-g", "prefix2", "None"]);

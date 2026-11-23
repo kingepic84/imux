@@ -86,8 +86,7 @@ fn q_agentstart() {
     let p3 = newpane(&e);
     e.run(&["send-keys", "-t", &p3, "-l", "sleep 600"]);
     e.run(&["send-keys", "-t", &p3, "Enter"]);
-    e.shows(&p3, "sleep 600");
-    std::thread::sleep(Duration::from_millis(700));
+    assert!(wait_until(Duration::from_secs(15), || e.var(&p3, "#{pane_current_command}") == "sleep"), "sleep did not start in the pane");
     let r = e.run(&["agent", "start", "busy", "--pane", &p3, "--json"]);
     t.ok("a busy pane is not_ready", r.code == 1 && r.err.contains("\"code\":\"not_ready\"") && r.err.contains("not at its shell prompt"));
     let r = e.run(&["agent", "get", "busy", "--json"]);
@@ -155,8 +154,11 @@ fn q_agentstart() {
 
     t.section("the client leaving ends the wait, not the program");
     let p6 = newpane(&e);
+    let left = || e.server_log().matches(" disconnected\"}").count();
+    let before = left();
     e.run_for(&["agent", "start", "leaver", "--kind", "fake", "--pane", &p6, "--timeout", "60000", "--", "--mode", "late"], Duration::from_secs(2));
-    std::thread::sleep(Duration::from_secs(1));
+    // the server has seen the client go before it is asked whether it is still there
+    assert!(wait_until(Duration::from_secs(15), || left() > before), "the server never noticed the client leave");
     t.ok("the server is still there", e.run(&["list-panes", "-a"]).code == 0);
     let r = e.run(&["agent", "start", "other", "--pane", &p6, "--json"]);
     t.ok("the pane is busy running the program", r.code == 1 && r.err.contains("not_ready"));

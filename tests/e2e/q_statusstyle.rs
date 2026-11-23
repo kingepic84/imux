@@ -22,7 +22,7 @@ fn q_statusstyle() {
     t.ok("status-bg changed status-style", e.all(&["show-options", "-g", "status-style"]).contains("bg=colour206"));
     let all = e.with_client("sty", |c| {
         c.wait_seen("RIGHT", Duration::from_secs(5));
-        std::thread::sleep(Duration::from_millis(500));
+        e.barrier(c, "sty");
     });
     t.ok("status-left-style reaches the left segment", all.contains("38;5;201"));
     t.ok("status-right-style reaches the right segment", all.contains("38;5;202"));

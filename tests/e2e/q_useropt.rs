@@ -10,10 +10,6 @@ fn dm(e: &Env, f: &str) -> String {
     e.out(&["display-message", "-p", f])
 }
 
-fn nap(ms: u64) {
-    std::thread::sleep(Duration::from_millis(ms));
-}
-
 #[test]
 fn q_useropt() {
     let mut e = Env::new("quo");
@@ -86,8 +82,11 @@ fn q_useropt() {
     let out = e.with_client("s", |c| {
         for k in [b"\x02x", b"\x02y", b"\x02z"] {
             c.send(k);
-            nap(900);
         }
+        // the refusal of y is decided by the server on the spot, before z is looked at, so once z has
+        // written its file y has had its say
+        assert!(wait_until(LONG, || !e.read("rs1.out").is_empty() && !e.read("rs3.out").is_empty()), "the shell commands did not run");
+        c.wait_seen("can be set by a program in the pane", LONG);
     });
     t.ok("a value the user set may be used in shell text", e.read("rs1.out").lines().any(|l| l == "trusted"));
     t.ok("a value a pane set is refused unquoted, naming the way out", e.read("rs2.out").is_empty() && out.contains("can be set by a program in the pane"));
@@ -101,7 +100,6 @@ fn q_useropt() {
 
     t.section("a dry read keeps nothing and starts nothing");
     e.kill_server();
-    nap(800);
     t.ok("check-config still lists them as information", e.all(&["check-config", &p(&conf)]).contains("user-option: @from_config"));
     t.finish();
 }

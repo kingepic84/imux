@@ -6,7 +6,6 @@ use std::os::unix::fs::PermissionsExt;
 use std::time::Duration;
 
 const LONG: Duration = Duration::from_secs(15);
-const GAP: Duration = Duration::from_millis(350);
 
 fn new_client(e: &Env) -> Client {
     let c = e.client(100, 30, &["new", "-s", "w"]);
@@ -19,7 +18,9 @@ fn new_client(e: &Env) -> Client {
 fn type_all(c: &mut Client, chunks: &[&str]) {
     for chunk in chunks {
         c.send(chunk.as_bytes());
-        std::thread::sleep(GAP);
+        if *chunk == "\x1b" {
+            c.escape_pause();
+        }
     }
 }
 
@@ -27,7 +28,6 @@ fn fresh(e: &Env, mut c: Client) {
     c.send(b"\x02d");
     c.wait_exit(LONG);
     e.kill_server();
-    std::thread::sleep(Duration::from_millis(300));
 }
 
 #[test]
@@ -52,9 +52,11 @@ fn t_buffers() {
     t.section("delete-buffer takes the newest, a named paste takes its own");
     {
         let mut c = new_client(&e);
-        type_all(&mut c, &["\x02:", "set-buffer -b first one-text\r", "\x02:", "set-buffer -b second two-text\r", "\x02-", "echo gone-", "\x02:", "paste-buffer -b first\r", "\r", "\x02-", "\x02-", "\x02#"]);
-        t.ok("paste-buffer -b pastes that buffer", c.wait_seen("gone-one-text", LONG));
+        type_all(&mut c, &["\x02:", "set-buffer -b first one-text\r", "\x02:", "set-buffer -b second two-text\r", "\x02-", "echo gone-", "\x02:", "paste-buffer -b first\r", "\r", "\x02-", "\x02-"]);
+        // the message is drawn before the next key replaces it
         t.ok("a delete on an empty stack says so", c.wait_seen("no buffers", LONG));
+        type_all(&mut c, &["\x02#"]);
+        t.ok("paste-buffer -b pastes that buffer", c.wait_seen("gone-one-text", LONG));
         fresh(&e, c);
     }
 

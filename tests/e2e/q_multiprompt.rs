@@ -14,10 +14,6 @@ fn is(e: &Env, want: &str) -> bool {
     wait_until(LONG, || current(e) == want)
 }
 
-fn nap(ms: u64) {
-    std::thread::sleep(Duration::from_millis(ms));
-}
-
 #[test]
 fn q_multiprompt() {
     let mut e = Env::new("qmp");
@@ -36,9 +32,9 @@ fn q_multiprompt() {
 
     let out = e.with_client("mp", |c| {
         c.send(b"\x02a");
-        nap(500);
         c.send_str("AA\r");
-        nap(500);
+        // the second label is drawn before its answer closes the prompt
+        c.wait_seen("second:", LONG);
         c.send_str("BB\r");
         t.ok("two prompts, two answers: %1-%2", is(&e, "AA-BB"));
     });
@@ -46,51 +42,42 @@ fn q_multiprompt() {
 
     e.with_client("mp", |c| {
         c.send(b"\x02i");
-        nap(500);
         c.send(b"\r");
-        nap(500);
         c.send(b"\r");
         t.ok("-I gives each prompt its own first text, %2%1", is(&e, "twoone"));
     });
 
     e.with_client("mp", |c| {
         c.send(b"\x02l");
-        nap(500);
         c.send_str("x\r");
-        nap(500);
         c.send_str("y\r");
         t.ok("%% is the last answer", is(&e, "y"));
     });
 
     e.with_client("mp", |c| {
         c.send(b"\x02a");
-        nap(500);
         c.send_str("one\r");
-        nap(500);
         c.send_str("half");
-        nap(300);
         c.send(b"\x1b");
-        nap(800);
+        c.escape_pause();
+        c.sync();
     });
     t.ok("Escape at the second prompt cancels everything", current(&e) == "y");
 
     e.with_client("mp", |c| {
         c.send(b"\x02t");
-        nap(500);
         c.send_str("ok\r");
         t.ok("-T is accepted", is(&e, "tok"));
     });
 
     e.with_client("mp", |c| {
         c.send(b"\x02c");
-        nap(500);
         c.send(b"y");
         t.ok("a confirm label with a comma is one question", is(&e, "sure"));
     });
 
     e.with_client("mp", |c| {
         c.send(b"\x02p");
-        nap(500);
         c.send_str("%2\r");
         t.ok("what is typed is not read for % again", is(&e, "%2%2"));
     });

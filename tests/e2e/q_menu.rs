@@ -14,10 +14,6 @@ fn name_is(e: &Env, want: &str) -> bool {
     wait_until(LONG, || name(e) == want)
 }
 
-fn nap(ms: u64) {
-    std::thread::sleep(Duration::from_millis(ms));
-}
-
 #[test]
 fn q_menu() {
     let mut e = Env::new("qmn");
@@ -33,7 +29,8 @@ fn q_menu() {
 
     let out = e.with_client("mnu", |c| {
         c.send(b"\x02m");
-        nap(700);
+        // the box is drawn before a key closes it
+        c.wait_seen("(b)", LONG);
         c.send(b"a");
         t.ok("a shortcut chooses its item", name_is(&e, "alpha"));
     });
@@ -41,9 +38,7 @@ fn q_menu() {
 
     e.with_client("mnu", |c| {
         c.send(b"\x02m");
-        nap(700);
         c.send(b"j");
-        nap(300);
         c.send(b"\r");
         t.ok("the movement keys skip the rule and Enter chooses", name_is(&e, "beta"));
     });
@@ -51,13 +46,10 @@ fn q_menu() {
 
     e.with_client("mnu", |c| {
         c.send(b"\x02m");
-        nap(700);
         c.send(b"g");
-        nap(500);
         c.send(b"\x1b");
-        nap(700);
+        c.escape_pause();
         c.send(b"\x02m");
-        nap(700);
         c.send(b"a");
         t.ok("a disabled item does not run, Escape closes the menu, and a new one opens after it", name_is(&e, "alpha"));
     });
@@ -65,17 +57,14 @@ fn q_menu() {
 
     e.with_client("mnu", |c| {
         c.send(b"\x02m");
-        nap(700);
         c.send(b"q");
-        nap(500);
         c.send(b"x");
-        nap(800);
+        c.sync();
     });
     t.ok("q closes it and nothing ran", name(&e) == "keep");
 
     e.with_client("mnu", |c| {
         c.send(b"\x02m");
-        nap(700);
         c.send(b"\x1b[<0;47;15M\x1b[<0;47;15m");
         t.ok("a click on an item chooses it", name_is(&e, "beta"));
     });
@@ -83,11 +72,9 @@ fn q_menu() {
 
     e.with_client("mnu", |c| {
         c.send(b"\x02m");
-        nap(700);
         c.send(b"\x1b[<0;2;2M\x1b[<0;2;2m");
-        nap(500);
         c.send(b"a");
-        nap(800);
+        c.sync();
     });
     t.ok("a click outside closes it and the key after it is not a shortcut", name(&e) == "keep");
 

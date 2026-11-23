@@ -2,7 +2,6 @@
 //! does", so the built-in drag still works; any other command bound to that key takes the drag
 //! over. (The Rust version of tests/q_resizem.sh.)
 use crate::support::*;
-use std::time::Duration;
 
 /// Start a fresh server with `config`, drag the border between two panes with the mouse, and
 /// return the width of the left pane before and after, and what the client drew.
@@ -15,13 +14,10 @@ fn run_with(e: &Env, config: &str) -> (i32, i32, String) {
     let w0 = width();
     let out = e.with_client("rm", |c| {
         c.send_str(&format!("\x1b[<0;{};5M", w0 + 1));
-        std::thread::sleep(Duration::from_millis(300));
         c.send_str(&format!("\x1b[<32;{};5M", w0 + 6));
-        std::thread::sleep(Duration::from_millis(300));
         c.send_str(&format!("\x1b[<32;{};5M", w0 + 11));
-        std::thread::sleep(Duration::from_millis(300));
         c.send_str(&format!("\x1b[<0;{};5m", w0 + 11));
-        std::thread::sleep(Duration::from_millis(500));
+        c.sync();
     });
     (w0, width(), out)
 }

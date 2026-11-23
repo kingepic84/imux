@@ -36,7 +36,10 @@ fn q_worktreelist() {
     t.section("with a server and windows");
     let mut c = e.client(100, 30, &["new", "-s", "w"]);
     assert!(e.has_client());
-    wait_until(Duration::from_secs(15), || !e.run_cwd(&proj, &["worktree", "ABC-1"]).all().contains("no session to open"));
+    wait_until(Duration::from_secs(15), || {
+        let r = e.run_cwd(&proj, &["worktree", "ABC-1"]).all();
+        !r.contains("no session to open") && !r.contains("no server running")
+    });
     t.ok(
         "the new worktree is listed on its branch",
         wait_until(Duration::from_secs(10), || regex_lite::Regex::new("ABC-1\tABC-1\tw:[0-9]*\t").unwrap().is_match(&list())),

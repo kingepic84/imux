@@ -16,8 +16,10 @@ fn q_sendkeysfh() {
     t.ok("-H takes 0x forms", got("AB"));
     let r = e.run(&["send-keys", "-t", "skeys:", "-H", "43", "zz"]);
     t.ok("-H with a word that is no byte is an error", r.all().contains("hexadecimal"));
+    // the refused call typed nothing: the newline sent after it ends a line that has no `C` in it
+    let before = e.read("out").lines().count();
     e.run(&["send-keys", "-t", "skeys:", "-H", "0a"]);
-    std::thread::sleep(Duration::from_millis(700));
+    assert!(wait_until(Duration::from_secs(10), || e.read("out").lines().count() > before), "the newline was not typed");
     t.ok("and nothing of it was typed", !e.read("out").contains('C'));
     let r = e.run(&["send-keys", "-t", "skeys:", "-H", "100"]);
     t.ok("a value over one byte is refused", r.all().contains("hexadecimal"));

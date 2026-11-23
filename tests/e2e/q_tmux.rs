@@ -32,10 +32,9 @@ fn q_tmux() {
     e.session("tm", "w");
     assert!(e.ready("%0", Duration::from_millis(600)));
 
+    // what is typed to one shell runs in the order it was typed: no waiting between the lines
     say(&e, "printf \"BEFORE:%s\\n\" \"$(command -v tmux)\"", "%0");
-    std::thread::sleep(Duration::from_secs(1));
     say(&e, &format!("eval \"$({BIN} init bash)\""), "%0");
-    std::thread::sleep(Duration::from_secs(1));
     say(&e, "printf \"ENV:%s:%s\\n\" \"$TMUX_PANE\" \"$(command -v tmux)\"", "%0");
     t.ok("a pane has TMUX_PANE", wait_shows(&e, "%0", "ENV:%0:"));
     t.ok("and a tmux that is the shim", shows(&e, "%0", "/shims/tmux"));

@@ -2,7 +2,6 @@
 //! unique, so the bytes a client writes show which pane took which.
 //! (The Rust version of tests/q_windowstyle.sh.)
 use crate::support::*;
-use std::time::Duration;
 
 #[test]
 fn q_windowstyle() {
@@ -12,7 +11,7 @@ fn q_windowstyle() {
     e.set("IMUX_CONFIG", &p(&conf));
     e.session("sty", "one");
     e.run(&["split-window", "-d", "-t", "sty:one"]);
-    let record = || e.with_client("sty", |_| std::thread::sleep(Duration::from_secs(1)));
+    let record = || e.with_client("sty", |c| e.barrier(c, "sty"));
     t.ok("window-style is a real option", e.all(&["show-options", "-g", "window-style"]).contains("bg=colour201"));
     t.ok("window-active-style is a real option", e.all(&["show-options", "-g", "window-active-style"]).contains("bg=colour202"));
     let all = record();

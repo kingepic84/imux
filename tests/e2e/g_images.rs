@@ -17,14 +17,13 @@ fn run_with(e: &Env, term: &[(&str, &str)], conf: &str) -> Client {
     let six = p(&e.path("six.sh"));
     c.send_str(&format!("sh {six}\r"));
     assert!(wait_until(LONG, || e.capture("g:").matches("marker-after-six").count() >= 2 || e.capture("g:").lines().filter(|l| *l == "marker-after-six").count() >= 1), "the picture script did not run");
-    std::thread::sleep(Duration::from_millis(1500));
+    e.barrier(&c, "g");
     c.send_str(&format!("sh {six}\r"));
     assert!(wait_until(LONG, || e.capture("g:").lines().filter(|l| *l == "marker-after-six").count() >= 2), "the second run did not finish");
-    std::thread::sleep(Duration::from_millis(800));
+    e.barrier(&c, "g");
     c.send(b"\x02d");
     c.wait_exit(Duration::from_secs(10));
     e.kill_server();
-    std::thread::sleep(Duration::from_millis(500));
     c
 }
 

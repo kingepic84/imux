@@ -27,14 +27,16 @@ fn m11_phase1_rest() {
     t.ok("new -s with a used name is an error", e2.wait_for("duplicate session: alpha", LONG));
     e2.wait_exit(LONG);
     let mut att = e.client(100, 30, &["attach", "-t", "alpha"]);
-    std::thread::sleep(Duration::from_millis(800));
+    assert!(att.wait_drawn(LONG), "the client drew nothing");
     att.send(b"\x02d");
     t.ok("attach -t joins the named session", att.wait_for(r"\[detached\]", LONG));
     att.wait_exit(LONG);
 
+    // `ls` prints what is true when the shell runs it, so it is waited for before the names change
+    a.type_chunks(&["export W=1\r", "\x02c", "export W=2\r", "\x02c", "export W=3\r", "$BIN ls >$TMPDIR/ls1.out\r"], GAP);
+    assert!(wait_until(LONG, || !e.read("ls1.out").is_empty()), "the first ls did not run");
     a.type_chunks(
         &[
-            "export W=1\r", "\x02c", "export W=2\r", "\x02c", "export W=3\r", "$BIN ls >$TMPDIR/ls1.out\r",
             "\x02:", "swap-window -t 0\r", "\x022", "echo at3-$W >>$TMPDIR/pos.out\r", "\x020", "echo at1-$W >>$TMPDIR/pos.out\r",
             "\x02:", "move-window -t 2\r", "echo mv-$W >>$TMPDIR/pos.out\r", "\x020", "echo p1-$W >>$TMPDIR/pos.out\r",
             "\x02:", "swap-window -t 9\r",

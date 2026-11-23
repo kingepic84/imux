@@ -14,10 +14,6 @@ fn script(e: &Env, name: &str, text: &str) -> String {
     p(&f)
 }
 
-fn nap(ms: u64) {
-    std::thread::sleep(Duration::from_millis(ms));
-}
-
 fn client(e: &Env, args: &[&str]) -> Client {
     let c = e.client(100, 30, args);
     assert!(e.has_client(), "the client did not attach");
@@ -28,7 +24,6 @@ fn done(e: &Env, mut c: Client) -> Client {
     c.send(b"\x02d");
     c.wait_exit(LONG);
     e.kill_server();
-    nap(600);
     c
 }
 
@@ -41,7 +36,7 @@ fn m16_agents() {
     e.unset("SHELL");
     let mut t = Check::new("m16_agents");
     let probe = script(&e, "probe.sh", "printf '\\033]7501;?\\007'\nIFS= read -rs -t 4 -d '\\' reply </dev/tty\nprintf '%s' \"$reply\" | cat -v >\"$1\"\n");
-    let agent = script(&e, "agent.sh", "for step in \"$@\"; do\n  case $step in\n    wait:*) sleep \"${step#wait:}\" ;;\n    *) printf '\\033]7501;%s\\033\\\\' \"$step\" ;;\n  esac\ndone\nsleep 30\n");
+    let agent = script(&e, "agent.sh", "for step in \"$@\"; do\n  case $step in\n    wait:*) sleep \"${step#wait:}\" ;;\n    gate:*) while [ ! -e \"${step#gate:}\" ]; do sleep 0.05; done ;;\n    *) printf '\\033]7501;%s\\033\\\\' \"$step\" ;;\n  esac\ndone\nsleep 30\n");
 
     t.section("the pane answers the status query");
     let mut c = client(&e, &["new", "-s", "w"]);
@@ -54,19 +49,28 @@ fn m16_agents() {
     done(&e, c);
 
     t.section("status glyphs follow the reports");
+    let (g1, g2, g3) = (e.path("gate1"), e.path("gate2"), e.path("gate3"));
+    let state = |pane: &str, want: &str| wait_until(LONG, || e.all(&["agent", "get", pane.trim_start_matches('%')]).contains(&format!("state: {want}\n")));
+    let window = |want: &str| wait_until(LONG, || e.var("w:", "#{window_index}") == want);
     let mut c = client(&e, &["new", "-s", "w"]);
     assert!(e.ready("w:", Duration::from_millis(600)));
     c.send_str(&format!("{agent} state=working:app=fake\r"));
-    nap(1500);
+    assert!(state("%0", "working"), "the first pane never reported working");
     c.type_chunks(&["\x02c"], GAP);
-    c.send_str(&format!("{agent} state=blocked:app=fake:kind=permission wait:2 state=working:app=fake\r"));
-    nap(1500);
-    c.type_chunks(&["\x02c"], GAP);
-    c.send_str(&format!("{agent} wait:2 state=done:app=fake\r"));
-    nap(800);
-    c.type_chunks(&["\x02", "0"], GAP);
-    t.ok("a working pane shows the working glyph", c.wait_seen("WWW", LONG));
+    // the report waits for a file, so the pane stays blocked as long as the test looks at it
+    c.send_str(&format!("{agent} state=blocked:app=fake:kind=permission gate:{} state=working:app=fake\r", p(&g1)));
+    assert!(state("%1", "blocked"), "the second pane never reported blocked");
     t.ok("a blocked pane shows the blocked glyph", c.wait_seen("BBB", LONG));
+    std::fs::write(&g1, "").unwrap();
+    assert!(state("%1", "working"), "the second pane never went back to working");
+    c.type_chunks(&["\x02c"], GAP);
+    c.send_str(&format!("{agent} gate:{} state=done:app=fake\r", p(&g2)));
+    // leave the third pane before it finishes: a pane that finishes out of sight keeps the glyph
+    c.type_chunks(&["\x02", "0"], GAP);
+    assert!(window("0"), "the first window was not selected");
+    std::fs::write(&g2, "").unwrap();
+    assert!(state("%2", "done"), "the third pane never reported done");
+    t.ok("a working pane shows the working glyph", c.wait_seen("WWW", LONG));
     t.ok("a finished background pane shows the done glyph", c.wait_seen("DDD", LONG));
     t.ok("several panes in one state are counted", c.wait_seen("N:2", LONG));
     t.ok("the window list carries a glyph per window", c.seen(r"\[30;([1-7][0-9]|[0-9])H[^W]{0,80}WWW"));
@@ -76,23 +80,25 @@ fn m16_agents() {
     let mut c = client(&e, &["new", "-s", "w2"]);
     assert!(e.ready("w2:", Duration::from_millis(600)));
     c.type_chunks(&["\x02c"], GAP);
-    c.send_str(&format!("{agent} wait:2 state=done:app=fake\r"));
-    nap(800);
+    c.send_str(&format!("{agent} gate:{} state=done:app=fake\r", p(&g3)));
     c.type_chunks(&["\x02", "0"], GAP);
+    assert!(wait_until(LONG, || e.var("w2:", "#{window_index}") == "0"), "the first window was not selected");
+    std::fs::write(&g3, "").unwrap();
     t.ok("the done glyph shows while the pane is out of sight", c.wait_seen("DDD", LONG));
     c.send(b"\x02d");
     c.wait_exit(LONG);
+    let mut gone = false;
     let looked = e.with_client("w2", |c| {
         c.send(b"\x02");
-        nap(300);
         c.send(b"1");
-        nap(1500);
+        // the glyph is taken off the screen, and nothing that follows brings it back
+        gone = c.wait_gone("DDD", LONG);
         c.clear();
-        nap(1500);
+        e.barrier(c, "w2");
     });
+    t.ok("after looking at it the glyph is gone from the screen", gone);
     t.ok("after looking at it the glyph is gone from what follows", !looked.contains("DDD"));
     e.kill_server();
-    nap(600);
 
     t.section("the agent panel lists panes and jumps to the chosen one");
     let reader = script(&e, "reader.sh", "printf '\\033]7501;state=blocked:app=fake:kind=permission:msg=YXBwcm92ZS10aGluZw==\\033\\\\'\nIFS= read -r line </dev/tty\nprintf '%s' \"$line\" >\"$1\"\nsleep 30\n");
@@ -105,10 +111,10 @@ fn m16_agents() {
     assert!(e.ready("w4:", Duration::from_millis(600)));
     c.type_chunks(&["\x02c"], GAP);
     c.send_str(&format!("{reader} {d}/got.txt\r"));
-    nap(1200);
+    assert!(wait_until(LONG, || e.all(&["agent", "get", "1"]).contains("state: blocked\n")), "the reader never reported blocked");
     c.type_chunks(&["\x02c"], GAP);
     c.send_str(&format!("{agent} state=working:app=fake\r"));
-    nap(1200);
+    assert!(wait_until(LONG, || e.all(&["agent", "get", "2"]).contains("state: working\n")), "the third pane never reported working");
     c.type_chunks(&["\x02c", "\x02", "A"], GAP);
     t.ok("the panel has a title", c.wait_seen("agents", LONG));
     t.ok("it shows the message of a blocked agent", c.wait_seen("approve-thing", LONG));
@@ -153,14 +159,29 @@ fn m16_agents() {
     t.section("agent wait is answered when the state arrives");
     let mut c = client(&e, &["new", "-s", "w6"]);
     assert!(e.ready("w6:", Duration::from_millis(600)));
-    c.send_str(&format!("{BIN} pane report-agent --source hook --agent fake --state working --seq 1 >/dev/null 2>&1\r"));
-    nap(800);
-    c.send_str(&format!("(sleep 3; {BIN} pane report-agent --source hook --agent fake --state done --seq 2) >/dev/null 2>&1 &\r"));
-    assert!(wait_until(LONG, || !e.all(&["agent", "get", "0"]).contains("no agent record")), "the first report was not recorded");
+    // One program stays in the pane for the whole exchange: a `working` record is dropped once the
+    // pane's foreground process is the shell again. It reports working, waits for a file, then
+    // reports done, so the second report comes only after the wait has been asked.
+    let gate = e.path("gate4");
+    let reporter = script(
+        &e,
+        "reporter.sh",
+        &format!("{BIN} pane report-agent --source hook --agent fake --state working --seq 1 >/dev/null 2>&1\nwhile [ ! -e \"{g}\" ]; do sleep 0.05; done\n{BIN} pane report-agent --source hook --agent fake --state done --seq 2 >/dev/null 2>&1\nsleep 60\n", g = p(&gate)),
+    );
+    c.send_str(&format!("{reporter}\r"));
+    assert!(wait_until(LONG, || e.all(&["agent", "get", "0"]).contains("state: working")), "the first report was not recorded");
+    let connections = || e.server_log().matches(" connected\"}").count();
+    let before = connections();
+    let mut asking = e.command(BIN);
+    asking.args(["agent", "wait", "0", "--until", "done", "--timeout", "120"]).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped());
+    let asking = asking.spawn().expect("the wait starts");
+    assert!(wait_until(LONG, || connections() > before), "the server never took the wait's connection");
     let start = Instant::now();
-    let r = e.all(&["agent", "wait", "0", "--until", "done", "--timeout", "20"]);
+    std::fs::write(&gate, "").unwrap();
+    let out = asking.wait_with_output().expect("the wait ends");
+    let r = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
     t.matches("the wait returns the state", "done", &r);
-    t.ok("and returns when it arrives, not at the timeout", start.elapsed() < Duration::from_secs(15));
+    t.ok("and returns when it arrives, not at the timeout", start.elapsed() < Duration::from_secs(100));
     done(&e, c);
 
     t.section("a reported resume command comes back after a restart");
@@ -171,7 +192,7 @@ fn m16_agents() {
     assert!(e.ready("w7:", Duration::from_millis(600)));
     c.send_str(&format!("{resumer}\r"));
     assert!(wait_until(LONG, || !e.read("rr.txt").is_empty() || e.read("rr.txt").is_empty() && pgrep("sleep 31341")));
-    nap(1000);
+    assert!(wait_until(LONG, || e.all(&["agent", "get", "0"]).contains("resume:")), "the resume command was not recorded");
     e.run(&["save", "resumeA"]);
     let snap = std::fs::read_to_string(e.path("state/snapshots/resumeA.imux")).unwrap_or_default();
     t.ok("the snapshot holds the reported command", snap.contains("+resume"));

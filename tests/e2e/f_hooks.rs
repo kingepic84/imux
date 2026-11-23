@@ -44,7 +44,8 @@ set-hook -g alert-bell 'display-message x'
     e.run(&["rename-session", "-t", "h'1", "r'2"]);
     t.ok("#{q:hook_session_name} is one quoted word", seen("session-renamed:r'2"));
     e.run(&["send-keys", "-t", "r'2:1", "printf '\\033]2;title\\007'", "Enter"]);
-    std::thread::sleep(Duration::from_secs(2));
+    // the hook for a title change fires as the title changes: once the title is there, it has had its say
+    assert!(wait_until(Duration::from_secs(10), || e.var("r'2:1", "#{pane_title}") == "title"), "the title never changed");
     t.ok("a window name in shell text is refused, the command does not run", !e.path("bad.out").exists());
     e.run(&["kill-pane", "-t", "r'2:1"]);
     t.ok("pane-exited fires", seen("pane-exited"));
@@ -68,16 +69,16 @@ set-hook -g alert-bell 'display-message x'
 
     t.section("a hook that sets an option fires itself: the depth limit stops it");
     e.run(&["set", "-g", "display-time", "1111"]);
-    std::thread::sleep(Duration::from_secs(3));
-    let n = lines_of(&e.path("loop.out"));
+    assert!(wait_until(Duration::from_secs(10), || lines_of(&e.path("loop.out")) >= 1), "the hook never ran");
+    // the runs come one after the other and then stop: counted once they have stood still
+    let n = stable(Duration::from_secs(2), || lines_of(&e.path("loop.out")));
     t.ok(&format!("it ran, and not forever ({n} runs)"), (1..=8).contains(&n));
     t.ok("the server still answers", e.run(&["list-sessions"]).success());
-    std::thread::sleep(Duration::from_secs(2));
-    t.ok("and it has stopped", lines_of(&e.path("loop.out")) == n);
+    t.ok("and it has stopped", stable(Duration::from_secs(2), || lines_of(&e.path("loop.out"))) == n);
     e.run(&["set-hook", "-u", "after-set-option"]);
 
     t.section("clients");
-    e.with_client("r'2", |_| std::thread::sleep(Duration::from_millis(800)));
+    e.with_client("r'2", |c| e.barrier(c, "r'2"));
     t.ok("client-attached fires", seen("client-attached"));
     t.ok("client-detached fires", seen("client-detached"));
     e.kill_server();

@@ -20,7 +20,7 @@ fn watch(e: &Env, args: &[&str]) -> String {
     e.with_client("cp", |c| {
         e.run(args);
         c.wait_seen(r"\[|copy", Duration::from_secs(5));
-        std::thread::sleep(Duration::from_millis(700));
+        e.barrier(c, "cp");
     })
 }
 

@@ -15,13 +15,10 @@ fn m7_drag() {
     assert!(e.ready("0:", Duration::from_millis(600)));
     c.type_chunks(&["\x02%"], Duration::from_millis(700));
     assert!(wait_until(LONG, || e.out(&["list-panes"]).lines().count() == 2));
-    std::thread::sleep(Duration::from_millis(500));
     c.send_str("\x1b[<0;51;5M\x1b[<32;41;5M\x1b[<32;31;5M\x1b[<0;31;5m");
-    std::thread::sleep(Duration::from_millis(700));
     c.send_str("echo right-size-$(stty size | tr \" \" x)\r");
     t.ok("dragging the divider left narrows the left pane and widens the right one", c.wait_for("right-size-29x69", LONG));
     c.send_str("\x1b[<0;5;5M\x1b[<0;5;5m");
-    std::thread::sleep(Duration::from_millis(700));
     c.send_str("echo left-size-$(stty size | tr \" \" x)\r");
     t.ok("the left pane followed the pointer to 30 columns", c.wait_for("left-size-29x30", LONG));
     c.send(b"\x02d");

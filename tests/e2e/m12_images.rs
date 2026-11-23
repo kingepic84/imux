@@ -15,14 +15,13 @@ fn run_client(e: &Env, set: &[(&str, &str)]) -> Client {
     let script = p(&e.path("img.sh"));
     c.send_str(&format!("sh {script}\r"));
     assert!(wait_until(LONG, || e.capture("img:").lines().any(|l| l == "marker-after-image")), "the picture script did not run");
-    std::thread::sleep(Duration::from_millis(1500));
+    e.barrier(&c, "img");
     c.send_str(&format!("sh {script}\r"));
     assert!(wait_until(LONG, || e.capture("img:").lines().filter(|l| *l == "marker-after-image").count() >= 2));
-    std::thread::sleep(Duration::from_millis(800));
+    e.barrier(&c, "img");
     c.send(b"\x02d");
     c.wait_exit(Duration::from_secs(10));
     e.kill_server();
-    std::thread::sleep(Duration::from_millis(500));
     c
 }
 

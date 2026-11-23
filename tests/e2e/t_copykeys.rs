@@ -13,13 +13,21 @@ fn client_with(e: &Env, set: &[(&str, &str)], unset: &[&str]) -> Client {
     c
 }
 
+/// The line typed in the copy mode did not run: once the client's keys have all been handled, a
+/// command typed straight to the pane runs and shows its output, and `output` is not above it.
+fn line_not_run(e: &Env, c: &mut Client, output: &str) -> bool {
+    c.sync();
+    e.run(&["send-keys", "-t", "w:", "-l", "echo probe-$((3+4))"]);
+    e.run(&["send-keys", "-t", "w:", "Enter"]);
+    e.shows_line("w:", "probe-7") && !e.has_line("w:", output)
+}
+
 fn leave(e: &Env, mut c: Client) {
     c.send(b"\x02d");
     if c.wait_exit(Duration::from_secs(3)).is_none() {
         c.kill();
     }
     e.kill_server();
-    std::thread::sleep(Duration::from_millis(300));
 }
 
 #[test]
@@ -50,8 +58,7 @@ fn t_copykeys() {
     t.ok("a key bound with bind -T copy-mode-vi works", c.wait_for("bound-3", LONG));
     c.type_chunks(&["\x02[", "q"], GAP);
     c.send_str("echo unbound-$((1+2))\r");
-    std::thread::sleep(Duration::from_secs(1));
-    t.ok("an unbound key does nothing (the mode is still on, the typed line is not run)", !c.text().contains("unbound-3"));
+    t.ok("an unbound key does nothing (the mode is still on, the typed line is not run)", line_not_run(&e, &mut c, "unbound-3"));
     leave(&e, c);
 
     t.section("list-keys shows the copy mode tables");
@@ -71,8 +78,7 @@ fn t_copykeys() {
     let mut c = client_with(&e, &[("EDITOR", "nano")], &["VISUAL"]);
     c.type_chunks(&["\x02[", "y"], GAP);
     c.send_str("echo ed-$((1+2))\r");
-    std::thread::sleep(Duration::from_secs(1));
-    t.ok("with another editor the emacs keys are on (y does nothing, the mode stays)", !c.text().contains("ed-3"));
+    t.ok("with another editor the emacs keys are on (y does nothing, the mode stays)", line_not_run(&e, &mut c, "ed-3"));
     leave(&e, c);
 
     t.ok("no errors in server.log", !e.server_log().contains("\"level\":\"error\""));

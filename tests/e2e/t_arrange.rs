@@ -17,7 +17,6 @@ fn leave(e: &Env, mut c: Client) {
     c.send(b"\x02d");
     c.wait_exit(LONG);
     e.kill_server();
-    std::thread::sleep(Duration::from_millis(300));
 }
 
 fn panes(e: &Env, n: usize) -> bool {
@@ -35,7 +34,6 @@ fn t_arrange() {
     let mut c = new_client(&e);
     c.send(b"\x02%");
     assert!(panes(&e, 2));
-    std::thread::sleep(GAP);
     c.send_str(&size("before"));
     t.ok("the right pane is half the window before", c.wait_for("before-29x49", LONG));
     c.type_chunks(&["\x02z"], GAP);
@@ -51,7 +49,6 @@ fn t_arrange() {
     let mut c = new_client(&e);
     c.send(b"\x02%");
     assert!(panes(&e, 2));
-    std::thread::sleep(GAP);
     c.type_chunks(&["\x02!"], GAP);
     c.send_str(&size("broken"));
     t.ok("the broken out pane has a window to itself", c.wait_for("broken-29x100", LONG));
@@ -62,7 +59,6 @@ fn t_arrange() {
     let mut c = new_client(&e);
     c.send(b"\x02%");
     assert!(panes(&e, 2));
-    std::thread::sleep(GAP);
     c.send_str(&size("right"));
     t.ok("the right pane is 49 wide", c.wait_for("right-29x49", LONG));
     c.type_chunks(&["\x02{"], GAP);
@@ -75,7 +71,6 @@ fn t_arrange() {
     let mut c = new_client(&e);
     c.send(b"\x02%");
     assert!(panes(&e, 2));
-    std::thread::sleep(GAP);
     c.type_chunks(&["\x02\x0f"], GAP);
     c.send_str(&size("rotated"));
     t.ok("rotate-window moves the active pane to the other place", c.wait_for("rotated-29x50", LONG));
@@ -85,10 +80,8 @@ fn t_arrange() {
     let mut c = new_client(&e);
     c.send(b"\x02%");
     assert!(panes(&e, 2));
-    std::thread::sleep(GAP);
     c.send(b"\x02%");
     assert!(panes(&e, 3));
-    std::thread::sleep(GAP);
     c.type_chunks(&["\x02\x1b4"], GAP);
     c.send_str(&size("mainv"));
     t.ok("main-vertical puts the last pane under the other small one", c.wait_for("mainv-14x33", LONG));

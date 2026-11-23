@@ -32,6 +32,7 @@ fn q_eventswait() {
     t.ok("an event raises it", s1);
 
     t.section("--wait");
+    let before = e.server_log().matches(" connected\"}").count();
     let mut w1 = e
         .command(BIN)
         .args(["events", "--wait", "window-renamed", "--match", "window_name=waited"])
@@ -40,9 +41,11 @@ fn q_eventswait() {
         .stderr(Stdio::null())
         .spawn()
         .unwrap();
-    std::thread::sleep(Duration::from_secs(1));
+    // the server has the waiting command, and one more request has gone through it
+    assert!(wait_until(Duration::from_secs(15), || e.server_log().matches(" connected\"}").count() > before), "the server never took the wait's connection");
+    e.run(&["list-sessions"]);
     rename("other");
-    std::thread::sleep(Duration::from_millis(500));
+    // (if "other" had been taken for the answer, the output checked below would not say "waited")
     t.ok("an event that does not match is not the answer", matches!(w1.try_wait(), Ok(None)));
     rename("waited");
     let done = wait_until(Duration::from_secs(10), || matches!(w1.try_wait(), Ok(Some(_))));
@@ -63,9 +66,7 @@ fn q_eventswait() {
     t.section("--since");
     let n = e.out(&["api-seq"]);
     rename("early");
-    std::thread::sleep(Duration::from_millis(300));
     rename("late");
-    std::thread::sleep(Duration::from_millis(500));
     let r = e.run(&["events", "--wait", "window-renamed", "--match", "window_name=early", "--since", &n, "--timeout", "3000"]);
     t.ok("an event that came before the wait started is found", r.code == 0 && r.out.contains("\"window_name\":\"early\""));
     let r = e.run(&["events", "--wait", "window-renamed", "--match", "window_name=late", "--since", &n, "--timeout", "3000"]);

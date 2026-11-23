@@ -4,6 +4,7 @@
 //! (The Rust version of tests/c_features.sh.)
 use crate::support::*;
 use std::path::Path;
+use std::process::{Command, Stdio};
 use std::time::Duration;
 
 const LONG: Duration = Duration::from_secs(20);
@@ -15,11 +16,10 @@ fn probe_client(e: &Env, term: &str) -> Client {
     assert!(e.ready("p:", Duration::from_millis(600)));
     c.send_str("echo up-$((1+2))\r");
     assert!(c.wait_for("up-3", LONG));
-    std::thread::sleep(Duration::from_millis(500));
+    e.barrier(&c, "p");
     c.send(b"\x02d");
     c.wait_exit(LONG);
     e.kill_server();
-    std::thread::sleep(Duration::from_millis(600));
     c
 }
 
@@ -82,7 +82,8 @@ touch "$1"
     let pdone = e.path("pic.done");
     e.run(&["send-keys", "-t", "c:0", &format!("PIXFILE={pixfile} sh {pic} {}", pdone.display()), "Enter"]);
     assert!(wait_file(&pdone), "the picture script did not finish");
-    std::thread::sleep(Duration::from_secs(1));
+    // the server reads the pictures in order: the last line of the script is there when they are
+    assert!(e.shows("c:0", "^D"), "the last line of the picture script never showed");
 
     t.section("pictures in copied text, delete targets, placeholders, media");
     let cap1 = e.capture("c:0");
@@ -101,8 +102,7 @@ touch "$1"
     let _ = std::fs::remove_file(&pdone);
     e.run(&["send-keys", "-t", "c:0", &format!("clear; PIXFILE={pixfile} sh {pic} {}", pdone.display()), "Enter"]);
     assert!(wait_file(&pdone));
-    std::thread::sleep(Duration::from_secs(1));
-    t.ok("with kitty-media files the file picture is shown", e.capture("c:0").contains("D [image]"));
+    t.ok("with kitty-media files the file picture is shown", wait_until(LONG, || e.capture("c:0").contains("D [image]")));
     e.run(&["set", "-g", "kitty-media", "none"]);
 
     e.write("probe.sh", "stty raw -echo\nprintf \"$3\"\ndd bs=1 count=\"$2\" of=\"$1\" 2>/dev/null\nstty sane\ntouch \"$1.done\"\n");
@@ -119,21 +119,21 @@ touch "$1"
 
     t.section("a program inside a nested shell");
     e.kill_server();
-    std::thread::sleep(Duration::from_secs(1));
     e.write("imux.conf", "set restore-commands \"sleep\"\n");
     e.session("n", "w");
     assert!(e.ready("n:0", Duration::from_millis(600)));
     e.run(&["send-keys", "-t", "n:0", "sh", "Enter"]);
-    std::thread::sleep(Duration::from_secs(1));
+    // the nested shell is a child of the pane's shell
+    let outer = e.var("n:0", "#{pane_pid}");
+    let nested = || Command::new("pgrep").args(["-P", &outer, "-x", "sh"]).stdout(Stdio::null()).status().map(|s| s.success()).unwrap_or(false);
+    assert!(wait_until(LONG, nested), "the nested shell did not start");
     e.run(&["send-keys", "-t", "n:0", "sleep 317", "Enter"]);
     assert!(wait_until(LONG, || pgrep("sleep 317")));
-    std::thread::sleep(Duration::from_millis(800));
     e.run(&["save", "nested"]);
     let snaps = e.path("state/snapshots");
     let recorded = std::fs::read_dir(&snaps).map(|d| d.flatten().any(|f| std::fs::read_to_string(f.path()).unwrap_or_default().contains("+outer 1 1 sh"))).unwrap_or(false);
     t.ok("the snapshot records the shell the program runs in", recorded);
     e.kill_server();
-    std::thread::sleep(Duration::from_millis(1500));
     e.session("other", "w");
     e.run(&["restore", "nested"]);
     t.ok("restore types the shell and then the program", wait_until(LONG, || e.out(&["list-panes", "-a", "-F", "#{pane_current_command}"]).lines().any(|l| l == "sleep")));

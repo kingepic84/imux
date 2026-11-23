@@ -32,6 +32,10 @@ fn f_plugins() {
     let src = |n: &str| p(&e.path(&format!("src/{n}")));
     let w = |secs: u64, f: &dyn Fn() -> bool| wait_until(Duration::from_secs(secs), f);
     let list = || e.out(&["plugin", "list"]);
+    let wait_list = |e: &Env, text: &str| {
+        w(15, &|| e.out(&["plugin", "list"]).contains(text));
+        e.out(&["plugin", "list"])
+    };
 
     t.section("link");
     mk(&e, "bad-api", "name bad-api\napi 2\nexec ./run.sh", "exit 0");
@@ -106,9 +110,9 @@ fn f_plugins() {
 
     t.section("restarts");
     t.ok("a plugin that fails is started again, five times, and then given up", w(15, &|| runs(&e, "crash.count") == 6));
-    std::thread::sleep(Duration::from_secs(2));
+    // the supervisor says it has given up (the delays between restarts are made short for tests)
+    t.matches("plugin list says it stopped and why", "(?m)^crash.*stopped: ended 6 times", &wait_list(&e, "stopped: ended 6 times"));
     t.ok("it is not started a seventh time", runs(&e, "crash.count") == 6);
-    t.matches("plugin list says it stopped and why", "(?m)^crash.*stopped: ended 6 times", &list());
     t.ok("what it printed is in its log", e.out(&["plugin", "logs", "crash"]).contains("boom"));
     t.ok("restart never means once", runs(&e, "never.count") == 1);
     t.ok("a plugin that ends cleanly is not started again", runs(&e, "clean.count") == 1);

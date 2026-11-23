@@ -10,7 +10,10 @@ fn attach_and_print(e: &Env, name: &str, look_for: &str) -> String {
         e.ready(&format!("m:{name}"), Duration::from_millis(400));
         e.run(&["send-keys", "-t", &format!("m:{name}"), "echo noise", "Enter"]);
         if look_for.is_empty() {
-            std::thread::sleep(Duration::from_millis(1500));
+            // nothing is to be shown: the activity has happened (the pane has printed) and the client
+            // has drawn everything that came before the sync message
+            e.shows(&format!("m:{name}"), "^noise$");
+            e.barrier(c, "m");
         } else {
             c.wait_seen(look_for, Duration::from_secs(8));
         }

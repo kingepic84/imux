@@ -31,12 +31,13 @@ fn q_silence() {
     t.ok("and it comes back after the quiet time", until_flags("quiet=.*~"));
     e.run(&["set", "-g", "silence-action", "none"]);
     e.run(&["send-keys", "-t", "q:quiet", "echo again", "Enter"]);
+    // monitor-silence is 2 s: a flag, were one to be set, would come two seconds after the output, so
+    // this watches for a second and a half longer than that (nothing shows that it is not coming)
     std::thread::sleep(Duration::from_millis(3500));
     t.ok("silence-action none sets no flag", !Regex::new("(?m)quiet=.*~").unwrap().is_match(&flags()));
     e.run(&["set", "-g", "silence-action", "other"]);
     e.run(&["set", "-g", "monitor-silence", "0"]);
-    std::thread::sleep(Duration::from_millis(1500));
-    t.ok("monitor-silence 0 takes the flag away", !flags().contains('~'));
+    t.ok("monitor-silence 0 takes the flag away", wait_until(Duration::from_secs(10), || !flags().contains('~')));
     e.kill_server();
     t.finish();
 }

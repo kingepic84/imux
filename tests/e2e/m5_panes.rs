@@ -5,7 +5,6 @@ use crate::support::*;
 use std::time::Duration;
 
 const LONG: Duration = Duration::from_secs(20);
-const GAP: Duration = Duration::from_millis(600);
 
 fn shell(e: &mut Env) {
     if let Some(z) = which("zsh") {
@@ -17,7 +16,7 @@ fn run_client(e: &Env, chunks: &[&str]) -> Client {
     let mut c = e.client(100, 30, &[]);
     assert!(e.has_client(), "the client did not attach");
     assert!(e.ready("0:", Duration::from_millis(800)), "the pane never settled");
-    c.type_chunks(chunks, GAP);
+    c.type_steps(e, chunks);
     c
 }
 
@@ -44,7 +43,6 @@ fn m5_panes() {
     t.ok("prefix Alt-Right grows the pane to the right", a.seen("resized-size-29x55"));
     t.ok("divider glyph drawn", a.seen("│"));
     t.ok("server exits when the last pane exits", wait_until(LONG, || !sock.exists()));
-    std::thread::sleep(Duration::from_secs(1));
 
     let clicked = size("clicked-size");
     let clicked_right = size("clicked-right-size");

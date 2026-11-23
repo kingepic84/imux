@@ -4,6 +4,13 @@
 use crate::support::*;
 use std::time::Duration;
 
+/// Type `tag` to `pane` (in its own shell, as a command that prints it) and wait for it to show.
+fn typed_and_shown(e: &Env, pane: &str, tag: &str) -> bool {
+    e.run(&["send-keys", "-t", pane, "-l", &format!("echo {tag}")]);
+    e.run(&["send-keys", "-t", pane, "Enter"]);
+    e.shows(pane, &format!("^{tag}$"))
+}
+
 fn flags(e: &Env) -> String {
     e.all(&["list-windows", "-t", "m", "-F", "#{window_name}=#{window_flags}"])
 }
@@ -43,7 +50,8 @@ fn q_window() {
     t.ok("a pane is not synchronized", e.var(&a1, "#{pane_synchronized}") == "0");
     e.run(&["send-keys", "-t", &a1, "echo first-$((1+1))", "Enter"]);
     t.ok("typing reaches the pane it is sent to", e.shows(&a1, "^first-2$"));
-    std::thread::sleep(Duration::from_millis(500));
+    // text typed to the other pane afterwards shows up after anything that had leaked into it
+    t.ok("(the other pane takes its own text)", typed_and_shown(&e, &a2, "probe-a"));
     t.lacks("and no other", "^first-2$", &e.capture(&a2));
 
     t.section("setw on a window");
@@ -55,7 +63,7 @@ fn q_window() {
     t.ok("and the other pane of the window", e.shows(&a2, "^second-3$"));
     e.run(&["send-keys", "-t", &b1, "echo other-$((2+2))", "Enter"]);
     t.ok("another window is not synchronized", e.shows(&b1, "^other-4$"));
-    std::thread::sleep(Duration::from_millis(500));
+    t.ok("(its other pane takes its own text)", typed_and_shown(&e, &b2, "probe-b"));
     t.lacks("its other pane gets nothing", "^other-4$", &e.capture(&b2));
     t.lacks("and nothing from it reached the first window", "^other-4$", &e.capture(&a2));
 
@@ -64,7 +72,7 @@ fn q_window() {
     t.ok("no value flips it off", e.var(&a1, "#{pane_synchronized}") == "0");
     e.run(&["send-keys", "-t", &a1, "echo third-$((3+3))", "Enter"]);
     t.ok("off again, only the named pane gets the keys", e.shows(&a1, "^third-6$"));
-    std::thread::sleep(Duration::from_millis(500));
+    t.ok("(the other pane takes its own text)", typed_and_shown(&e, &a2, "probe-c"));
     t.lacks("the other pane did not", "^third-6$", &e.capture(&a2));
     e.run(&["setw", "-t", "a:one", "synchronize-panes"]);
     t.ok("no value flips it on", e.var(&a1, "#{pane_synchronized}") == "1");
@@ -123,7 +131,9 @@ fn q_window() {
         assert!(wait_until(Duration::from_secs(10), || active(&e) == a1), "prefix o did not come back");
         c.send_str("echo copyskip-$((7+7))\r");
         t.ok("the active pane gets what is typed", e.shows(&a1, "^copyskip-14$"));
-        std::thread::sleep(Duration::from_millis(500));
+        // leave copy mode, then type to that pane: its own text shows after anything that reached it
+        e.run(&["send-keys", "-t", &a2, "-X", "cancel"]);
+        t.ok("(the pane takes its own text once out of copy mode)", typed_and_shown(&e, &a2, "probe-d"));
         t.lacks("the pane in copy mode does not", "^copyskip-14$", &e.capture(&a2));
         c.send(b"\x02d");
         c.wait_exit(Duration::from_secs(10));
@@ -187,9 +197,11 @@ fn q_window() {
     {
         let mut c = e.client(100, 30, &["attach", "-t", "m"]);
         assert!(attached(&e), "the client did not attach");
-        std::thread::sleep(Duration::from_millis(500));
-        e.run(&["send-keys", "-t", "m:cur", "printf '\\007'", "Enter"]);
-        std::thread::sleep(Duration::from_millis(1500));
+        assert!(c.wait_drawn(Duration::from_secs(15)), "the client drew nothing");
+        // the bell is followed by a line of text: when that is there the server has seen the bell
+        e.run(&["send-keys", "-t", "m:cur", "printf '\\007'; echo belled", "Enter"]);
+        assert!(e.shows("m:cur", "^belled$"), "the bell was not printed");
+        e.barrier(&c, "m");
         t.ok("bell-action current: a bell elsewhere shows nothing", !c.text().contains("Bell in window"));
         c.send(b"\x02d");
         c.wait_exit(Duration::from_secs(10));
@@ -198,7 +210,7 @@ fn q_window() {
     {
         let mut c = e.client(100, 30, &["attach", "-t", "m"]);
         assert!(attached(&e), "the client did not attach");
-        std::thread::sleep(Duration::from_millis(500));
+        assert!(c.wait_drawn(Duration::from_secs(15)), "the client drew nothing");
         e.run(&["send-keys", "-t", "m:cur", "printf '\\007'", "Enter"]);
         t.ok("visual-bell shows a message with the window number", c.wait_for("Bell in window 0", Duration::from_secs(10)));
         c.send(b"\x02d");

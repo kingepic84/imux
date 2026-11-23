@@ -13,24 +13,20 @@ fn m9_config() {
     );
     e.set("IMUX_CONFIG", &p(&conf));
     let mut c = e.client(100, 30, &[]);
-    std::thread::sleep(Duration::from_secs(1));
-    c.type_chunks(
-        &[
-            "\x01v",
-            "echo bound-size-$(stty size | tr \" \" x)\r",
-            "\x01%",
-            "echo unbound-size-$(stty size | tr \" \" x)\r",
-            "\x01:",
-            "set -g base-index 7\r",
-            "\x01c",
-            "\x01r",
-            "\x01:",
-            "set -g nonsense 1\r",
-        ],
-        Duration::from_millis(500),
-    );
-    c.wait_seen("unknown option: nonsense", Duration::from_secs(5));
-    std::thread::sleep(Duration::from_secs(1));
+    assert!(c.wait_drawn(Duration::from_secs(15)), "the client drew nothing");
+    // The keys are handled in order; what the client draws is only what is on the screen when a
+    // frame is made, so each step is waited for until it has been drawn before the next one.
+    let long = Duration::from_secs(15);
+    c.type_chunks(&["\x01v", "echo bound-size-$(stty size | tr \" \" x)\r"], Duration::ZERO);
+    c.wait_seen("bound-size-29x49", long);
+    c.type_chunks(&["\x01%", "echo unbound-size-$(stty size | tr \" \" x)\r"], Duration::ZERO);
+    c.wait_seen("unbound-size-29x49", long);
+    c.type_chunks(&["\x01:", "set -g base-index 7\r", "\x01c"], Duration::ZERO);
+    c.wait_seen("8:[a-z]", long);
+    c.type_chunks(&["\x01r"], Duration::ZERO);
+    c.wait_seen("source-file|reload tried|error\\(s\\)", long);
+    c.type_chunks(&["\x01:", "set -g nonsense 1\r"], Duration::ZERO);
+    c.wait_seen("unknown option: nonsense", long);
     let all = c.text();
     t.matches("config: bind v splits side by side", "bound-size-29x49", &all);
     t.matches("config: unbound % does nothing", "unbound-size-29x49", &all);

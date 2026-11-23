@@ -10,7 +10,11 @@ use std::time::{Duration, Instant};
 /// A wait running in the background.
 struct Bg(Child);
 
+/// A wait in the background, once the server has taken its connection and one more request has gone
+/// through the server after it (a wait asked for before a line is printed sees the line).
 fn bgwait(e: &Env, args: &[&str]) -> Bg {
+    let connections = || e.server_log().matches(" connected\"}").count();
+    let before = connections();
     let child = e
         .command(BIN)
         .args(["pane", "wait-output"])
@@ -20,6 +24,8 @@ fn bgwait(e: &Env, args: &[&str]) -> Bg {
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
+    assert!(wait_until(Duration::from_secs(15), || connections() > before), "the server never took the connection of {args:?}");
+    e.run(&["list-sessions"]);
     Bg(child)
 }
 
@@ -79,12 +85,10 @@ fn q_panewait() {
 
     t.section("a line that comes later");
     let bg = bgwait(&e, &["1", "--match", "LATE-42"]);
-    std::thread::sleep(Duration::from_millis(700));
     e.run(&["pane", "run", "1", "echo LATE-$((40+2))"]);
     let res = bg.within(10);
     t.ok("it ends when the line is printed", matches!(&res, Some((0, o)) if has_line(o, "LATE-42")));
     let bg = bgwait(&e, &["1", "--regex", "^LATER-[0-9]+$"]);
-    std::thread::sleep(Duration::from_millis(500));
     e.run(&["pane", "run", "1", "echo LATER-$((1+1))"]);
     let res = bg.within(10);
     t.ok("a regular expression waits for its line", matches!(&res, Some((_, o)) if has_line(o, "LATER-2")));
@@ -147,8 +151,7 @@ fn q_panewait() {
         let m = format!("NEVER-APPEARS-{n}");
         waits.push(bgwait(&e, &["1", "--match", &m]));
     }
-    std::thread::sleep(Duration::from_secs(2));
-    // Eight background processes under a loaded machine can take a while to register.
+    // each of the eight has been taken by the server
     let limited = wait_until(Duration::from_secs(60), || {
         let r = w(&["1", "--match", "NEVER-APPEARS-9", "--timeout", "600", "--json"]);
         r.code == 1 && r.err.contains("\"code\":\"limit_reached\"")

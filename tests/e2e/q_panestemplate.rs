@@ -21,7 +21,6 @@ fn q_panestemplate() {
     e.run(&["select-pane", "-t", &first]);
     e.with_client("pt", |c| {
         c.send(b"\x02Q");
-        std::thread::sleep(Duration::from_millis(500));
         c.send(b"1");
         wait_until(Duration::from_secs(5), || !picked("@picked").is_empty());
     });
@@ -30,14 +29,12 @@ fn q_panestemplate() {
     t.ok("and the pane is not selected", active() == first);
     e.with_client("pt", |c| {
         c.send(b"\x02W");
-        std::thread::sleep(Duration::from_millis(500));
         c.send(b"2");
         wait_until(Duration::from_secs(5), || !picked("@timed").is_empty());
     });
     t.ok("-d with a template works", !picked("@timed").is_empty());
     e.with_client("pt", |c| {
         c.send(b"\x02E");
-        std::thread::sleep(Duration::from_millis(500));
         c.send(b"2");
         wait_until(Duration::from_secs(5), || active() != first);
     });

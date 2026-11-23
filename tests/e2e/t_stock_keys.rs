@@ -17,7 +17,6 @@ fn leave(e: &Env, mut c: Client) {
     c.send(b"\x02d");
     c.wait_exit(LONG);
     e.kill_server();
-    std::thread::sleep(Duration::from_millis(300));
 }
 
 #[test]
@@ -30,7 +29,6 @@ fn t_stock_keys() {
     let mut c = new_client(&e);
     c.send(b"\x02c");
     assert!(wait_until(LONG, || e.out(&["list-windows"]).lines().count() == 2), "c did not create a window");
-    std::thread::sleep(GAP);
     c.type_chunks(&["\x02", "0"], GAP);
     c.send_str("echo id-$IMUX_PANE_ID\r");
     t.ok("0 selects the first window", c.wait_for("id-0", LONG));
@@ -46,15 +44,17 @@ fn t_stock_keys() {
     t.section("C-a is no prefix by default");
     let mut c = new_client(&e);
     c.send(b"\x01c");
-    std::thread::sleep(Duration::from_secs(1));
-    t.ok("C-a c did not create a window", e.out(&["list-windows"]).lines().count() == 1);
+    // the negative is only meaningful once the server has handled the keys: a following C-b c is
+    // handled after C-a c, so when its window exists the earlier one has had its say
+    c.send(b"\x02c");
+    assert!(wait_until(LONG, || e.out(&["list-windows"]).lines().count() >= 2), "C-b c did not create a window");
+    t.ok("C-a c did not create a window", e.out(&["list-windows"]).lines().count() == 2);
     leave(&e, c);
 
     t.section("the two splits");
     let mut c = new_client(&e);
     c.send(b"\x02%");
     assert!(wait_until(LONG, || e.out(&["list-panes", "-t", "w:"]).lines().count() == 2));
-    std::thread::sleep(GAP);
     c.send_str("echo side-$IMUX_PANE_ID\r");
     t.ok("% opens a second pane next to the first", c.wait_for("side-1", LONG));
     c.type_chunks(&["\x02o"], GAP);
@@ -64,7 +64,6 @@ fn t_stock_keys() {
     let mut c = new_client(&e);
     c.send(b"\x02\"");
     assert!(wait_until(LONG, || e.out(&["list-panes", "-t", "w:"]).lines().count() == 2));
-    std::thread::sleep(GAP);
     c.send_str("echo stack-$IMUX_PANE_ID\r");
     t.ok("\" opens a second pane below the first", c.wait_for("stack-1", LONG));
     c.type_chunks(&["\x02o"], GAP);

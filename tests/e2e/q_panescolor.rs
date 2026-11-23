@@ -14,9 +14,10 @@ fn q_panescolor() {
         e.with_client("sty", |c| {
             c.send(b"\x02q");
             c.wait_seen("0", Duration::from_secs(2));
-            std::thread::sleep(Duration::from_millis(600));
+            e.barrier(c, "sty");
             c.send(b"\x1b");
-            std::thread::sleep(Duration::from_millis(400));
+            c.escape_pause();
+            c.sync();
         })
     };
     let all = record();

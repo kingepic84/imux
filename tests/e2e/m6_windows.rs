@@ -5,7 +5,6 @@ use crate::support::*;
 use std::time::Duration;
 
 const LONG: Duration = Duration::from_secs(20);
-const GAP: Duration = Duration::from_millis(600);
 
 #[test]
 fn m6_windows() {
@@ -21,12 +20,12 @@ fn m6_windows() {
     let mut c = e.client(100, 30, &[]);
     assert!(e.has_client());
     assert!(e.ready("0:", Duration::from_millis(800)));
-    c.type_chunks(
+    c.type_steps(
+        &e,
         &[
             "export W=one\r", "\x02c", "export W=two\r", "echo now-$W\r", "\x1b[<0;8;30M\x1b[<0;8;30m", "echo clicked-$W\r", "\x02n", "echo next-$W\r", "\x02p", "echo prev-$W\r",
             "\x02c", "export W=three\r", "\x02", "1", "echo number-$W\r", "\x02", "2", "\x02&", "echo killed-$W\r", "exit\r", "exit\r",
         ],
-        GAP,
     );
     c.wait_exit(LONG);
     t.ok("new window starts a fresh shell", c.seen("now-two"));

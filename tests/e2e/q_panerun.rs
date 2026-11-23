@@ -52,11 +52,14 @@ fn q_panerun() {
     t.ok("after -- the text may start with a dash", r.code == 0);
 
     t.section("the text is a paste");
-    e.write("bp.sh", "case \"$2\" in on) printf \"\\033[?2004h\";; esac\nwhile IFS= read -r l; do printf \"%s\\n\" \"$l\" >>\"$1\"; done\n");
+    e.write("bp.sh", "case \"$2\" in on) printf \"\\033[?2004h\";; esac\nprintf \"\\033]2;ready\\007\"\nwhile IFS= read -r l; do printf \"%s\\n\" \"$l\" >>\"$1\"; done\n");
     let pon = e.out(&["split-window", "-d", "-P", "-F", "#{pane_id}", &format!("sh {d}/bp.sh {d}/bp-on on")]).trim_start_matches('%').to_string();
     let poff = e.out(&["split-window", "-d", "-P", "-F", "#{pane_id}", &format!("sh {d}/bp.sh {d}/bp-off off")]).trim_start_matches('%').to_string();
-    // These programs print nothing, so there is no screen to wait for; give them a moment to start.
-    std::thread::sleep(Duration::from_millis(800));
+    // These programs print nothing on the screen; each sets its title when it has set up, after the
+    // bracketed paste mode (the server reads their output in order).
+    for pane in [&pon, &poff] {
+        assert!(wait_until(Duration::from_secs(15), || e.var(&format!("%{pane}"), "#{pane_title}") == "ready"), "the program of pane {pane} did not start");
+    }
     e.run(&["pane", "run", &pon, "hello"]);
     e.run(&["pane", "run", &poff, "hello"]);
     t.ok(
@@ -132,7 +135,10 @@ fn q_panerun() {
     t.ok("it may type into the pane it spawned", rc == 0 && file_has(&e, "f7", "^from-pane$"));
     let (rc, o) = in_pane(&e, "0", &format!("{BIN} pane run 1 \"echo no >{d}/f8\""));
     t.ok("it may not type into one it did not spawn", rc != 0 && o.contains("not one this pane spawned"));
-    std::thread::sleep(Duration::from_millis(500));
+    // a command that touches a file, typed to the same pane afterwards, runs after anything the refused call typed
+    e.run(&["send-keys", "-t", "%1", "-l", &format!("touch {d}/after8")]);
+    e.run(&["send-keys", "-t", "%1", "Enter"]);
+    assert!(wait_until(Duration::from_secs(10), || e.path("after8").exists()), "the pane did not run its own command");
     t.ok("and nothing was typed", !e.path("f8").exists());
     let (rc, _) = in_pane(&e, "0", &format!("{BIN} agent read {kid} --lines 3"));
     t.ok("it may read the pane it spawned", rc == 0);
@@ -140,7 +146,9 @@ fn q_panerun() {
     t.ok("it may not read another pane", rc != 0);
     e.run(&["set", "-g", "command-from-panes", "off"]);
     let (rc, o) = in_pane(&e, "0", &format!("{BIN} pane run {kid} \"echo off >{d}/f9\""));
-    std::thread::sleep(Duration::from_millis(500));
+    e.run(&["send-keys", "-t", &format!("%{kid}"), "-l", &format!("touch {d}/after9")]);
+    e.run(&["send-keys", "-t", &format!("%{kid}"), "Enter"]);
+    assert!(wait_until(Duration::from_secs(10), || e.path("after9").exists()), "the pane did not run its own command");
     t.ok("with command-from-panes off it only looks", rc != 0 && o.contains("command-from-panes") && !e.path("f9").exists());
     e.run(&["set", "-g", "command-from-panes", "spawned"]);
 
@@ -149,12 +157,17 @@ fn q_panerun() {
     t.ok("control: valid hex bytes are typed", e.shows("%1", "zz"));
     e.run(&["send-keys", "-t", "%1", "C-u"]);
     e.run(&["send-keys", "-t", "%1", "C-l"]);
-    std::thread::sleep(Duration::from_millis(500));
+    e.run(&["send-keys", "-t", "%1", "-l", "echo cleared-1"]);
+    e.run(&["send-keys", "-t", "%1", "Enter"]);
+    assert!(e.shows("%1", "cleared-1"), "the pane did not take its own text");
     let r = e.run(&["send-keys", "-t", "%1", "-H", "71", "71", "5g"]);
     t.ok("a bad hex byte is refused", r.all().contains("hexadecimal"));
     let r = e.run(&["send-keys", "-t", "%1", "-N", "0", "qq"]);
     t.ok("a bad repeat count is refused", r.all().contains("1 to 1000"));
-    std::thread::sleep(Duration::from_millis(500));
+    // text typed afterwards shows after anything the refused calls had typed
+    e.run(&["send-keys", "-t", "%1", "-l", "echo cleared-2"]);
+    e.run(&["send-keys", "-t", "%1", "Enter"]);
+    assert!(e.shows("%1", "cleared-2"), "the pane did not take its own text");
     t.ok("nothing of either was typed", !e.capture("%1").contains("qq"));
     e.kill_server();
     t.finish();

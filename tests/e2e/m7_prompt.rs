@@ -9,30 +9,22 @@ fn m7_prompt() {
     let e = Env::new("m7p");
     let mut t = Check::new("m7_prompt");
     let mut c = e.client(100, 30, &[]);
-    std::thread::sleep(Duration::from_secs(1));
-    c.type_chunks(
-        &[
-            "\x02:",
-            "split-window -h\r",
-            "echo split-size-$(stty size | tr \" \" x)\r",
-            "\x02:",
-            "frobnicate\r",
-            "\x02q",
-            "0",
-            "echo picked-size-$(stty size | tr \" \" x)\r",
-            "\x02:",
-            "resize-pane -R 4\r",
-            "echo resized-size-$(stty size | tr \" \" x)\r",
-            "\x02:",
-            "rename-window \"my build\"\r",
-            "\x02:",
-            "new-window\r",
-            "\x02p",
-        ],
-        Duration::from_millis(500),
-    );
-    c.wait_seen("1:[a-z]", Duration::from_secs(5));
-    std::thread::sleep(Duration::from_secs(1));
+    assert!(c.wait_drawn(Duration::from_secs(15)), "the client drew nothing");
+    // The keys are handled in order, but a screen that changes again before the next frame is never
+    // drawn, so each step waits until its result has been drawn before the next one is typed.
+    let long = Duration::from_secs(15);
+    c.type_chunks(&["\x02:", "split-window -h\r", "echo split-size-$(stty size | tr \" \" x)\r"], Duration::ZERO);
+    c.wait_seen("split-size-29x49", long);
+    c.type_chunks(&["\x02:", "frobnicate\r"], Duration::ZERO);
+    c.wait_seen("unknown command: frobnicate", long);
+    c.type_chunks(&["\x02q", "0", "echo picked-size-$(stty size | tr \" \" x)\r"], Duration::ZERO);
+    c.wait_seen("picked-size-29x50", long);
+    c.type_chunks(&["\x02:", "resize-pane -R 4\r", "echo resized-size-$(stty size | tr \" \" x)\r"], Duration::ZERO);
+    c.wait_seen("resized-size-29x54", long);
+    c.type_chunks(&["\x02:", "rename-window \"my build\"\r"], Duration::ZERO);
+    c.wait_seen("my build", long);
+    c.type_chunks(&["\x02:", "new-window\r", "\x02p"], Duration::ZERO);
+    c.wait_seen("1:[a-z]", long);
     let all = c.text();
     t.matches("split-window -h at the prompt splits side by side", "split-size-29x49", &all);
     t.matches("an unknown command shows a message", "unknown command: frobnicate", &all);

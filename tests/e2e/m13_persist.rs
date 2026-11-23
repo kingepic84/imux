@@ -52,10 +52,25 @@ fn m13_persist() {
         let mut c = e.client(100, 30, &["new", "-s", "work"]);
         assert!(e.has_client(), "the client did not attach");
         assert!(e.ready("work:", Duration::from_millis(600)));
-        for chunk in [format!("cd {p1}\r"), "\x02%".to_string(), format!("cd {p2}\r"), "\x02c".to_string(), format!("cd {p3}\r"), "sleep 31337\r".to_string(), "\x02c".to_string(), format!("tail -F {na}\r")] {
-            c.send_str(&chunk);
-            std::thread::sleep(Duration::from_millis(500));
-        }
+        // a new pane or window starts where the active pane is, so each `cd` must have taken effect
+        // (and each split or new window exist) before the next step
+        let cwd_is = |dir: &str| wait_until(LONG, || e.var("work:", "#{pane_current_path}") == dir);
+        let count = |what: &str, n: usize| wait_until(LONG, || e.out(&[what, "-t", "work:"]).lines().count() == n);
+        c.send_str(&format!("cd {p1}\r"));
+        assert!(cwd_is(&p1), "the first cd did not happen");
+        c.send(b"\x02%");
+        assert!(count("list-panes", 2), "the split did not happen");
+        c.send_str(&format!("cd {p2}\r"));
+        assert!(cwd_is(&p2), "the second cd did not happen");
+        c.send(b"\x02c");
+        assert!(count("list-windows", 2), "the second window did not appear");
+        c.send_str(&format!("cd {p3}\r"));
+        assert!(cwd_is(&p3), "the third cd did not happen");
+        c.send_str("sleep 31337\r");
+        assert!(wait_until(LONG, || pgrep("sleep 31337")), "sleep did not start");
+        c.send(b"\x02c");
+        assert!(count("list-windows", 3), "the third window did not appear");
+        c.send_str(&format!("tail -F {na}\r"));
         assert!(wait_until(LONG, || pgrep("sleep 31337") && pgrep(&format!("tail -F {na}"))), "the programs did not start");
         let save = e.run(&["save", "snap1"]);
         let snaps = e.run(&["snapshots"]);
@@ -71,7 +86,6 @@ fn m13_persist() {
         c.wait_exit(LONG);
     }
     e.kill_server();
-    std::thread::sleep(Duration::from_millis(500));
     cleanup();
     t.ok("kill-server removes the autosave", !autosave.exists());
 
@@ -88,7 +102,9 @@ fn m13_persist() {
         t.matches("restoring again leaves the existing name alone", "left alone", &r2.all());
         t.matches("the restored session has its three windows", "work: 3 windows", &ls.all());
         t.ok("an allowed command runs again", wait_until(LONG, || pgrep("sleep 31337")));
-        std::thread::sleep(Duration::from_secs(2));
+        // the pane of the command that is not allowed has a shell at its prompt, and what would have
+        // been typed there was typed at start
+        assert!(e.ready("work:2", Duration::from_millis(600)), "the third window never settled");
         t.ok("a command that is not allowed does not", !pgrep(&format!("tail -F {na}")));
         other.send(b"\x02d");
         other.wait_exit(LONG);
@@ -96,13 +112,10 @@ fn m13_persist() {
     {
         let mut c = e.client(100, 30, &["attach", "-t", "work"]);
         assert!(e.has_client());
-        std::thread::sleep(Duration::from_millis(700));
+        assert!(c.wait_drawn(LONG), "the client drew nothing");
         c.send(b"\x020");
-        std::thread::sleep(Duration::from_millis(500));
         c.send_str("echo cwd-$(pwd -P)-a\r");
-        std::thread::sleep(Duration::from_millis(600));
         c.send(b"\x02o");
-        std::thread::sleep(Duration::from_millis(500));
         c.send_str("echo cwd-$(pwd -P)-b\r");
         t.ok("the active pane of a window is the one that was active", c.wait_seen(&format!("cwd-{p2}-a"), LONG));
         t.ok("the other pane of the window kept its directory", c.wait_seen(&format!("cwd-{p1}-b"), LONG));
@@ -127,7 +140,7 @@ fn m13_persist() {
     {
         let mut c = e.client(100, 30, &[]);
         assert!(e.has_client());
-        std::thread::sleep(Duration::from_secs(1));
+        assert!(wait_until(LONG, || e.all(&["ls"]).contains("work: 3 windows")), "the autosave was not restored");
         let ls = e.run(&["ls"]);
         t.matches("starting without arguments restores the autosave", "work: 3 windows", &ls.all());
         t.matches("and the other session with it", "other: 1 window", &ls.all());
@@ -135,7 +148,6 @@ fn m13_persist() {
         c.wait_exit(LONG);
     }
     e.kill_server();
-    std::thread::sleep(Duration::from_millis(500));
     cleanup();
     t.ok("kill-server removes both autosave files", !autosave.exists() && !state.join("autosave.prev").exists());
     t.ok("kill-server keeps named snapshots", std::fs::metadata(&snap).map(|m| m.len() > 0).unwrap_or(false));
@@ -146,7 +158,7 @@ fn m13_persist() {
     {
         let mut c = e.client(100, 30, &["new", "-s", "fresh"]);
         assert!(e.has_client());
-        std::thread::sleep(Duration::from_millis(800));
+        assert!(wait_until(LONG, || e.all(&["ls"]).contains("fresh: 1 window")), "the requested session did not start");
         let ls = e.run(&["ls"]);
         t.matches("a damaged autosave starts the requested session", "fresh: 1 window", &ls.all());
         t.lacks("and restores nothing from it", "work", &ls.all());

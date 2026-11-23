@@ -69,8 +69,11 @@ fn one_shell(name: &str, n: u32) {
     pkill(&format!("sleep {sleep_n}"));
 
     e.run_cwd(&proj, &["worktree", "--setup", false_, &format!("ABD-{n}")]);
-    std::thread::sleep(Duration::from_secs(4));
-    t.ok(&format!("{name}: a failing setup keeps the command from starting"), !pgrep(&format!("sleep {sleep_n}")));
+    // a worktree made after it goes through its setup and command; the command of the failed one
+    // would have started before that
+    e.run_cwd(&proj, &["worktree", "--setup", &format!("{touch} {}", p(&d.join("later.marker"))), &format!("ABE-{n}")]);
+    t.ok(&format!("{name}: a later worktree's command runs"), wait_until(Duration::from_secs(30), || pgrep(&format!("sleep {sleep_n}"))));
+    t.ok(&format!("{name}: a failing setup keeps the command from starting"), pgrep_count(&format!("sleep {sleep_n}")) == 1);
     pkill(&format!("sleep {sleep_n}"));
 
     t.section(&format!("{name}: a restored program keeps its arguments"));

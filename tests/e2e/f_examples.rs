@@ -72,7 +72,9 @@ fn f_examples() {
     e.run(&["rename-window", "-t", &wid, "something-else"]);
     t.ok("renamed away, the plugin gives the worktree's name back", w(10, &|| has_line(&names(), "ABC-1")));
     e.run(&["rename-window", "-t", "a:first", "plain"]);
-    std::thread::sleep(Duration::from_secs(1));
+    // the plugin takes the events in order: when it has answered a later one, it has seen this one
+    e.run(&["rename-window", "-t", &wid, "something-else-2"]);
+    t.ok("(and again, the plugin gives the worktree's name back)", w(10, &|| has_line(&names(), "ABC-1")));
     t.ok("a window without a worktree is left alone", has_line(&names(), "plain"));
 
     t.section("notify-blocked");
@@ -84,11 +86,12 @@ fn f_examples() {
     e.run(&["send-keys", "-t", &ap, &p(&agent_sh), "Enter"]);
     t.ok("the fake agent is up", w(10, &|| e.path("agent.ready").exists()));
     e.run(&["send-keys", "-t", &ap, "work", "Enter"]);
-    std::thread::sleep(Duration::from_secs(2));
-    t.ok("no notification for working or done", !e.path("osascript.log").exists());
+    t.ok("the agent is working", w(10, &|| e.out(&["agent", "get", ap.trim_start_matches('%')]).contains("state: working")));
     e.run(&["send-keys", "-t", &ap, "block", "Enter"]);
     t.ok("a blocked agent gives a notification", w(10, &|| e.read("osascript.log").contains("--end--")));
     let log = e.read("osascript.log");
+    // the working state came first: a notification for it would be in the log before this one
+    t.ok("no notification for working or done", log.matches("--end--").count() == 1);
     t.ok("with the window name in the title argument", has_line(&log, "agent"));
     t.ok("and the agent's message as one argument, text and not script", log.contains("approve Bash") && !e.path("pwned").exists());
     e.run_for(&["kill-server"], Duration::from_secs(20));

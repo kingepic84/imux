@@ -12,7 +12,7 @@ fn q_titles() {
     e.session("s", "one");
     t.section("off by default");
     t.ok("set-titles is off", e.all(&["show-options", "set-titles"]).lines().any(|l| l == "set-titles off"));
-    let off = e.with_client("s", |_| std::thread::sleep(Duration::from_secs(1)));
+    let off = e.with_client("s", |c| e.barrier(c, "s"));
     t.ok("no title is sent", !off.contains("\x1b]2;"));
     t.section("on");
     e.run(&["set", "-g", "set-titles", "on"]);

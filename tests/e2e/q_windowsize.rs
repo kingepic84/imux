@@ -16,7 +16,6 @@ fn width_is(e: &Env, target: &str, want: &str) -> bool {
 fn start(e: &Env, conf: &str) {
     e.write("imux.conf", &format!("{conf}\n"));
     e.kill_server();
-    std::thread::sleep(Duration::from_millis(300));
     e.session("ws", "w");
 }
 

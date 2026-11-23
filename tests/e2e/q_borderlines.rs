@@ -8,7 +8,7 @@ fn q_borderlines() {
     let mut t = Check::new("q_borderlines");
     e.session("sty", "one");
     e.run(&["split-window", "-d", "-h", "-t", "sty:one"]);
-    let record = || e.with_client("sty", |_| std::thread::sleep(std::time::Duration::from_millis(500)));
+    let record = || e.with_client("sty", |c| e.barrier(c, "sty"));
     let all = record();
     t.ok("the default divider is the single line", all.contains('│') && !all.contains('║'));
     e.run(&["set", "-g", "pane-border-lines", "double"]);

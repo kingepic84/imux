@@ -122,9 +122,13 @@ fn q_agentname() {
         .stderr(Stdio::null())
         .spawn()
         .unwrap();
-    std::thread::sleep(Duration::from_secs(1));
-    r(&["agent", "name", "1", "epsilon"]);
-    wait_until(Duration::from_secs(10), || e.read("events").contains("\"name\":\"epsilon\""));
+    // a name set before the subscriber is known to the server is lost, so it is set (and changed
+    // back and forth) until the event has come out
+    wait_until(Duration::from_secs(20), || {
+        r(&["agent", "name", "1", "zeta"]);
+        r(&["agent", "name", "1", "epsilon"]);
+        wait_until(Duration::from_millis(500), || e.read("events").contains("\"name\":\"epsilon\""))
+    });
     t.matches("agent-state-changed carries the name when it is set", "\"event\":\"agent-state-changed\".*\"name\":\"epsilon\"", &e.read("events"));
     let _ = ev.kill();
     let _ = ev.wait();

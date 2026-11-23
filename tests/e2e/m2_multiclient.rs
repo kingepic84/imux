@@ -14,7 +14,7 @@ fn m2_multiclient() {
     assert!(e.ready("0:", Duration::from_millis(600)));
     let mut b = e.client(40, 12, &["attach"]);
     assert!(wait_until(LONG, || e.out(&["list-clients"]).lines().count() == 2), "the second client did not attach");
-    std::thread::sleep(Duration::from_millis(700));
+    assert!(b.wait_drawn(LONG), "the second client drew nothing");
     a.send_str("echo from-a-$((3*3))\r");
     assert!(a.wait_for("from-a-9", LONG));
     a.send_str("echo size-$(stty size | tr \" \" x)\r");

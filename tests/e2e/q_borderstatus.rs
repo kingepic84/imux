@@ -18,7 +18,7 @@ fn q_borderstatus() {
     e.run(&["set", "-g", "pane-border-format", "LBL#{pane_index}X"]);
     e.run(&["set", "-g", "pane-border-status", "top"]);
     t.ok("top: each pane loses one row", reaches(&p0, h0 - 1) && reaches(&p1, h1 - 1));
-    let all = e.with_client("sty", |_| std::thread::sleep(Duration::from_secs(1)));
+    let all = e.with_client("sty", |c| e.barrier(c, "sty"));
     t.ok("top: the label is drawn for the first pane", all.contains("LBL0X"));
     t.ok("top: and for the second", all.contains("LBL1X"));
     let t0 = height(&p0);

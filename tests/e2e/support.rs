@@ -18,6 +18,7 @@ use std::time::{Duration, Instant};
 pub const BIN: &str = env!("CARGO_BIN_EXE_imux");
 
 static COUNTER: AtomicUsize = AtomicUsize::new(0);
+static BARRIERS: AtomicUsize = AtomicUsize::new(0);
 
 /// What a command printed and how it ended.
 #[derive(Debug, Clone)]
@@ -232,15 +233,24 @@ impl Env {
     pub fn with_client(&self, session: &str, f: impl FnOnce(&mut Client)) -> String {
         let mut c = self.client(100, 30, &["attach", "-t", session]);
         assert!(self.has_client(), "the client did not attach");
-        thread::sleep(Duration::from_millis(700));
+        assert!(c.wait_drawn(Duration::from_secs(15)), "the client drew nothing");
         f(&mut c);
-        thread::sleep(Duration::from_millis(300));
         c.send(b"\x02d");
         if c.wait_exit(Duration::from_secs(3)).is_none() {
             c.kill();
         }
         assert!(self.no_clients(), "the client did not go away");
         c.text()
+    }
+
+    /// A point in the client's output after which everything the server had queued for it is in:
+    /// a message to the session is drawn behind whatever was sent before it. Use it before a check
+    /// that something was *not* drawn, instead of sleeping and hoping it would have shown up.
+    pub fn barrier(&self, c: &Client, session: &str) {
+        let n = BARRIERS.fetch_add(1, Ordering::Relaxed);
+        let mark = format!("SYNC{n}Q");
+        self.run(&["display-message", "-t", &format!("{session}:"), &mark]);
+        assert!(c.wait_seen(&mark, Duration::from_secs(15)), "the client never drew {mark}");
     }
 
     /// Wait until a pane's shell is ready for typing: the pane shows something and has stopped
@@ -250,7 +260,13 @@ impl Env {
         let mut last = String::new();
         let mut since = Instant::now();
         while start.elapsed() < Duration::from_secs(60) {
-            let now = self.capture(pane);
+            // a pane that does not exist yet (the client is still attaching) is not ready
+            let r = self.run(&["capture-pane", "-p", "-t", pane]);
+            if r.code != 0 {
+                thread::sleep(Duration::from_millis(50));
+                continue;
+            }
+            let now = r.out;
             if now != last {
                 last = now;
                 since = Instant::now();
@@ -265,6 +281,11 @@ impl Env {
     /// Kill the server of this environment, as a test does to start clean.
     pub fn kill_server(&self) {
         let _ = self.run_for(&["kill-server"], Duration::from_secs(10));
+        // the next command must not find the dying server
+        wait_until(Duration::from_secs(15), || {
+            let r = self.run(&["list-sessions"]);
+            r.code != 0 && r.all().contains("no server running")
+        });
     }
 
     /// A client attached through a pseudo-terminal of the given size.
@@ -350,6 +371,22 @@ pub fn wait_until(limit: Duration, mut f: impl FnMut() -> bool) -> bool {
         }
         thread::sleep(Duration::from_millis(20));
     }
+}
+
+/// The value `f` gives once it has stood still for `quiet`: for something that runs a few times and
+/// then stops, where "stopped" can only be seen as nothing happening for a while.
+pub fn stable<T: PartialEq>(quiet: Duration, mut f: impl FnMut() -> T) -> T {
+    let mut last = f();
+    let mut since = Instant::now();
+    while since.elapsed() < quiet {
+        thread::sleep(Duration::from_millis(50));
+        let now = f();
+        if now != last {
+            last = now;
+            since = Instant::now();
+        }
+    }
+    last
 }
 
 /// Records the checks of one test. Every check is printed as `ok` or `FAIL` with its label, and the
@@ -491,11 +528,79 @@ impl Client {
         self.send(text.as_bytes());
     }
 
-    /// Type each chunk of text, `gap` apart, as a person would.
-    pub fn type_chunks(&mut self, chunks: &[&str], gap: Duration) {
+    /// Type each chunk of text in order. The server handles one client's keys in the order they
+    /// arrive, so nothing waits between chunks, except after a lone Escape: it is only an Escape
+    /// (and not the start of a key sequence) once `escape-time` has passed without more input.
+    pub fn type_chunks(&mut self, chunks: &[&str], _gap: Duration) {
         for chunk in chunks {
             self.send(chunk.as_bytes());
-            thread::sleep(gap);
+            if *chunk == "\x1b" {
+                self.escape_pause();
+            }
+        }
+    }
+
+    /// Let a lone Escape just typed settle: the default `escape-time` is 10 ms.
+    pub fn escape_pause(&self) {
+        thread::sleep(Duration::from_millis(60));
+    }
+
+    /// A point after which every key typed so far has been handled by the server: a command typed
+    /// at the prompt goes the same way the keys went, and its message comes back after what they
+    /// did. (`Env::barrier` is the one for things that go the other way, from the server to the
+    /// screen.) Nothing may be open that would take the prompt key itself.
+    pub fn sync(&mut self) {
+        let n = BARRIERS.fetch_add(1, Ordering::Relaxed);
+        // what is typed shows `#{session_id}`, the message shows its value: only the message matches
+        self.send(b"\x02:");
+        self.send_str(&format!("display-message \"SYNC#{{session_id}}-{n}\"\r"));
+        assert!(self.wait_seen(&format!("SYNC\\$[0-9]+-{n}"), Duration::from_secs(15)), "the client never showed the sync message {n}");
+    }
+
+    /// Wait until the screen no longer shows text matching `pattern`.
+    pub fn wait_gone(&self, pattern: &str, limit: Duration) -> bool {
+        let re = Regex::new(&translate_pattern(pattern)).expect("a valid pattern");
+        wait_until(limit, || !re.is_match(&self.screen_text()))
+    }
+
+    /// Wait until the client has drawn its first screen (anything at all on it).
+    pub fn wait_drawn(&self, limit: Duration) -> bool {
+        wait_until(limit, || !self.screen_text().trim().is_empty())
+    }
+
+    /// Type keys and shell lines in order, waiting where a later step depends on an earlier one
+    /// having happened. The server handles the keys in order, but a shell runs a line when it gets to
+    /// it, and what the client draws is only what is on the screen when a frame is made:
+    /// - after `echo LABEL-$X` (a shell line) the output `LABEL-` and a digit or letter is waited for
+    ///   (after `echo TEXT`, the line `TEXT`), so the line has run (with the layout it was typed in)
+    ///   and has been drawn;
+    /// - after `exit` the pane is waited for to be gone (the next line goes to another pane);
+    /// - after a lone Escape the escape time is waited out.
+    pub fn type_steps(&mut self, e: &Env, chunks: &[&str]) {
+        let limit = Duration::from_secs(20);
+        let panes = || {
+            let r = e.run(&["list-panes", "-a"]);
+            if r.code == 0 { r.out.lines().count() } else { 0 }
+        };
+        for chunk in chunks {
+            let before = if *chunk == "exit\r" { panes() } else { 0 };
+            self.send_str(chunk);
+            if let Some(rest) = chunk.strip_prefix("echo ") {
+                let line = rest.trim_end_matches('\r');
+                if let Some(at) = line.find('$') {
+                    let label = &line[..at];
+                    assert!(self.wait_seen(&format!("{label}[0-9a-z]"), limit), "the output of {label} never showed");
+                } else {
+                    // no variable in it: the output is a line of its own (the typed line has `echo` in front)
+                    assert!(self.wait_screen(&format!("(?m)^{line} *$"), limit), "the output {line} never showed");
+                }
+            }
+            if *chunk == "exit\r" && before > 0 {
+                assert!(wait_until(limit, || panes() < before), "the pane did not end");
+            }
+            if *chunk == "\x1b" {
+                self.escape_pause();
+            }
         }
     }
 
@@ -606,6 +711,12 @@ pub fn which(name: &str) -> Option<String> {
 /// Is a process whose command line contains `pattern` running (pgrep -f)?
 pub fn pgrep(pattern: &str) -> bool {
     Command::new("pgrep").arg("-f").arg(pattern).stdout(Stdio::null()).stderr(Stdio::null()).status().map(|s| s.success()).unwrap_or(false)
+}
+
+/// How many processes have a command line that contains `pattern` (pgrep -fc).
+pub fn pgrep_count(pattern: &str) -> usize {
+    let out = Command::new("pgrep").arg("-fc").arg(pattern).stderr(Stdio::null()).output();
+    out.ok().and_then(|o| String::from_utf8_lossy(&o.stdout).trim().parse().ok()).unwrap_or(0)
 }
 
 /// End the processes whose command line contains `pattern` (pkill -f).

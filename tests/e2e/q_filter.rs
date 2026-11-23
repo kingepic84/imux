@@ -4,11 +4,6 @@ use crate::support::*;
 use std::time::Duration;
 
 const LONG: Duration = Duration::from_secs(15);
-const GAP: Duration = Duration::from_millis(500);
-
-fn nap(d: Duration) {
-    std::thread::sleep(d);
-}
 
 fn session_of_client(e: &Env) -> String {
     e.out(&["list-clients", "-F", "#{client_session}"]).lines().next().unwrap_or("").to_string()
@@ -22,14 +17,16 @@ fn until_session(e: &Env, name: &str) -> bool {
 fn attach(e: &Env, session: &str) -> Client {
     let c = e.client(100, 30, &["attach", "-t", session]);
     assert!(e.has_client(), "the client did not attach");
-    nap(Duration::from_millis(700));
+    assert!(c.wait_drawn(LONG), "the client drew nothing");
     c
 }
 
 fn keys(c: &mut Client, seq: &[&str]) {
     for k in seq {
         c.send(k.as_bytes());
-        nap(GAP);
+        if *k == "\x1b" {
+            c.escape_pause();
+        }
     }
 }
 
@@ -51,9 +48,11 @@ fn q_filter() {
 
     t.section("the session picker");
     let mut c = attach(&e, "alpha");
-    keys(&mut c, &["\x02s", "/", "bet", "\r", "\r"]);
+    keys(&mut c, &["\x02s", "/", "bet"]);
+    // the box is drawn with the query on its border before Enter closes it
+    t.ok("the query and its count are on the box's border", c.wait_seen("/bet_ 1/3", Duration::from_secs(15)));
+    keys(&mut c, &["\r", "\r"]);
     t.ok("typing a query and Enter twice switches to the session that matches", until_session(&e, "beta"));
-    t.ok("the query and its count are on the box's border", c.seen("/bet_ 1/3"));
     leave(&e, c);
 
     t.section("keys of the picker are free until a slash");
@@ -69,14 +68,14 @@ fn q_filter() {
     leave(&e, c);
     let mut c = attach(&e, "alpha");
     keys(&mut c, &["\x02s", "/", "gam", "\x1b", "\x1b", "\x1b", "\r"]);
-    nap(Duration::from_secs(1));
+    c.sync();
     t.ok("Escape after Escape closes the picker, so the client stays where it was", session_of_client(&e) == "alpha");
     leave(&e, c);
 
     t.section("no match, then Enter");
     let mut c = attach(&e, "alpha");
     keys(&mut c, &["\x02s", "/", "zzz", "\r", "\r"]);
-    nap(Duration::from_secs(1));
+    c.sync();
     t.ok("choosing from an empty list closes it and changes nothing", session_of_client(&e) == "alpha");
     leave(&e, c);
 

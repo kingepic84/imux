@@ -39,13 +39,12 @@ fn q_notifyrecipe() {
 
     t.section("a session being looked at");
     let _ = std::fs::remove_file(e.path("notes"));
-    std::thread::sleep(Duration::from_millis(500));
     let mut c = e.client(100, 30, &["new", "-s", "seen"]);
     assert!(wait_until(Duration::from_secs(20), || e.out(&["ls"]).lines().any(|l| l.starts_with("seen:"))), "the session seen did not start");
     e.run(&["send-keys", "-t", "seen:0", &format!("{BIN} pane report-agent --source t --agent fake --state blocked --message m"), "Enter"]);
     e.run(&["new-window", "-d", "-t", "seen:", "-n", "elsewhere", &report("u", "blocked")]);
     t.ok("the window nobody looks at notifies", has_note(&e, "imux: blocked|seen:elsewhere"));
-    std::thread::sleep(Duration::from_secs(2));
+    // the pane being looked at reported first, so a note for it would be in the file before this one
     t.ok("the pane being looked at does not", notes(&e).lines().count() == 1);
     e.kill_server();
     c.wait_exit(Duration::from_secs(10));

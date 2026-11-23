@@ -15,8 +15,7 @@ fn s_snapshot() {
     assert!(e.has_client());
     assert!(e.ready("%0", Duration::from_millis(500)));
     c.send_str("sleep 31341\r");
-    c.wait_for("sleep 31341", Duration::from_secs(5));
-    std::thread::sleep(Duration::from_millis(500));
+    assert!(wait_until(Duration::from_secs(10), || pgrep("sleep 31341")), "sleep did not start");
     c.send(b"\x02c");
     assert!(wait_until(Duration::from_secs(10), || e.out(&["list-panes", "-a", "-F", "#{pane_id}"]).lines().count() == 2));
     assert!(e.ready("%1", Duration::from_millis(500)));
@@ -32,7 +31,9 @@ fn s_snapshot() {
         "the autosave has the restored program",
         wait_until(Duration::from_secs(15), || e.read("state/autosave.imux").contains("31341")),
     );
-    std::thread::sleep(Duration::from_secs(1));
+    // the autosave is written again with a later change, and the text would be in that one too
+    e.run(&["new-window", "-d", "-t", "w", "-n", "later"]);
+    assert!(wait_until(Duration::from_secs(15), || e.read("state/autosave.imux").contains("later")), "the autosave did not follow the change");
     t.ok("nor in the autosave", !e.read("state/autosave.imux").contains("SECRETARG123"));
     c.send(b"\x02d");
     if c.wait_exit(Duration::from_secs(3)).is_none() {

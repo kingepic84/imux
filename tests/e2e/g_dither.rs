@@ -22,12 +22,11 @@ fn run_with(e: &Env, term: &str, conf: &str) -> Vec<u8> {
     assert!(e.ready("gd:", Duration::from_millis(600)), "the pane never settled");
     c.send_str(&format!("sh {}\r", p(&e.path("pic.sh"))));
     assert!(wait_until(LONG, || e.capture("gd:").lines().any(|l| l == "marker-after-picture")), "the picture script did not finish");
-    std::thread::sleep(Duration::from_millis(800));
+    e.barrier(&c, "gd");
     c.send(b"\x02d");
     c.wait_exit(Duration::from_secs(10));
     let bytes = c.bytes();
     e.kill_server();
-    std::thread::sleep(Duration::from_millis(500));
     bytes
 }
 

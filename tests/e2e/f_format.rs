@@ -52,7 +52,7 @@ fn f_format() {
     e.set("IMUX_CONFIG", &p(&sc));
     let mut c = e.client(80, 24, &["new", "-s", "f"]);
     c.wait_seen("IN-F", Duration::from_secs(10));
-    std::thread::sleep(Duration::from_millis(500));
+    e.barrier(&c, "f");
     let text = c.text();
     t.ok("status-right takes a comparison", text.contains("IN-F"));
     t.ok("the current window shows its brackets", text.contains('['));

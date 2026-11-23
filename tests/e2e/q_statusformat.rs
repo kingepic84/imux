@@ -17,13 +17,12 @@ fn q_statusformat() {
     e.run(&["set", "-g", "status-format[1]", "SECOND ROW"]);
     t.ok("a format on row 1 adds a row", height("28"));
     e.run(&["set", "-g", "status-format[0]", "FIRST ROW"]);
-    std::thread::sleep(Duration::from_millis(500));
-    t.ok("a format on row 0 keeps both rows", height("28"));
     c.wait_seen("FIRST ROW", Duration::from_secs(5));
+    t.ok("a format on row 0 keeps both rows", height("28"));
     e.run(&["set", "-gu", "status-format[1]"]);
     t.ok("clearing row 1 gives the row back", height("29"));
     e.run(&["set", "-gu", "status-format[0]"]);
-    std::thread::sleep(Duration::from_millis(300));
+    e.barrier(&c, "s");
     c.send(b"\x02d");
     c.wait_exit(Duration::from_secs(3));
     let out = c.text();
