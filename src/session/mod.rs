@@ -32,11 +32,15 @@ pub struct Pane {
 
 /// Text for a shell that drops what is typed while it starts (PowerShell reads the terminal for
 /// its own queries and throws the typed bytes away with the answers): it is typed when the pane
-/// has been quiet for a moment, or when too long has passed.
+/// has asked where the cursor is (its first sign of reading the terminal) and then been quiet for a
+/// moment, or when too long has passed. Quiet alone is not enough: a loaded machine leaves
+/// PowerShell silent for longer than any short wait before it asks.
 pub struct TypeAhead {
     pub text: Vec<u8>,
     pub since: std::time::Instant,
     pub last_output: std::time::Instant,
+    /// The pane has sent a cursor position request (`ESC [ 6 n`).
+    pub asked: bool,
 }
 
 impl TypeAhead {
@@ -47,12 +51,24 @@ impl TypeAhead {
 
     pub fn new(text: Vec<u8>) -> TypeAhead {
         let now = std::time::Instant::now();
-        TypeAhead { text, since: now, last_output: now }
+        TypeAhead { text, since: now, last_output: now, asked: false }
+    }
+
+    /// Note output from the pane.
+    pub fn saw(&mut self, output: &[u8]) {
+        self.last_output = std::time::Instant::now();
+        if !self.asked && output.windows(4).any(|w| w == b"\x1b[6n") {
+            self.asked = true;
+        }
     }
 
     /// When the text may go in, if nothing more is printed.
     pub fn due(&self) -> std::time::Instant {
-        (self.last_output + Self::QUIET).max(self.since + Self::LEAST).min(self.since + Self::MOST)
+        let latest = self.since + Self::MOST;
+        if !self.asked {
+            return latest;
+        }
+        (self.last_output + Self::QUIET).max(self.since + Self::LEAST).min(latest)
     }
 }
 
@@ -388,14 +404,33 @@ mod tests {
     use std::time::Duration;
 
     #[test]
+    fn typeahead_waits_for_the_cursor_request_not_just_for_quiet() {
+        let mut t = TypeAhead::new(b"x\r".to_vec());
+        // silent for longer than the quiet wait, but PowerShell has not asked yet: still held to the limit
+        t.last_output = t.since;
+        assert_eq!(t.due(), t.since + TypeAhead::MOST);
+        t.saw(b"PowerShell 7.7.0\r\n");
+        assert!(!t.asked);
+        t.saw(b"\x1b[6n");
+        assert!(t.asked);
+        assert!(t.due() < t.since + TypeAhead::MOST);
+        assert!(t.due() >= t.since + TypeAhead::LEAST);
+    }
+
+    #[test]
     fn waiting_text_is_due_after_a_quiet_moment_never_too_early_and_never_too_late() {
         let mut t = TypeAhead::new(b"x\r".to_vec());
         let start = t.since;
-        assert_eq!(t.due(), start + Duration::from_millis(1500));
-        t.last_output = start + Duration::from_millis(1400);
-        assert_eq!(t.due(), start + Duration::from_millis(2100));
+        t.saw(b"\x1b[6n");
+        // never before the shortest wait, however quiet
+        t.last_output = start;
+        assert_eq!(t.due(), start + TypeAhead::LEAST);
+        // later output pushes it back by the quiet time
+        t.last_output = start + TypeAhead::LEAST - Duration::from_millis(100);
+        assert_eq!(t.due(), t.last_output + TypeAhead::QUIET);
+        // and never past the longest wait
         t.last_output = start + Duration::from_secs(60);
-        assert_eq!(t.due(), start + Duration::from_secs(10));
+        assert_eq!(t.due(), start + TypeAhead::MOST);
     }
 
     fn dummy_window(name: &str, id: PaneId) -> Window {

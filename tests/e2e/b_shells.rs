@@ -8,6 +8,17 @@ use std::time::Duration;
 
 const HOSTILE: &str = "it's $HOME;`id` 'q' \"d\" -n";
 
+/// The shell of a pane has finished starting. A quiet pane is not proof: PowerShell is silent for a
+/// while (longer on a loaded machine) before it asks where the cursor is, and drops what is typed
+/// until it has its answer. Its prompt (`PS /dir> `) is the sign that it reads input; the quiet
+/// wait after it covers the second cursor request that follows the prompt.
+fn shell_ready(e: &Env, name: &str, pane: &str) -> bool {
+    if name == "pwsh" && !wait_until(Duration::from_secs(60), || e.capture(pane).contains("PS ")) {
+        return false;
+    }
+    e.ready(pane, Duration::from_secs(2))
+}
+
 fn one_shell(name: &str, n: u32) {
     let Some(path) = which(name) else {
         println!("skip {name}: not installed");
@@ -50,7 +61,7 @@ fn one_shell(name: &str, n: u32) {
     let mut client = e.client(100, 30, &["new", "-s", "w"]);
     assert!(wait_until(Duration::from_secs(20), || e.out(&["ls"]).lines().any(|l| l.starts_with("w:"))), "the session w did not start");
 
-    assert!(e.ready("w:", Duration::from_secs(2)), "the first pane of w never settled");
+    assert!(shell_ready(&e, name, "w:"), "the first pane of w never settled");
     let marker = p(&d.join("ok.marker"));
     e.run_cwd(&proj, &["worktree", "--setup", &format!("{touch} {marker}"), &format!("ABC-{n}")]);
     t.ok(&format!("{name}: the setup ran"), wait_until(Duration::from_secs(30), || Path::new(&marker).exists()));
@@ -73,7 +84,7 @@ fn one_shell(name: &str, n: u32) {
         _ => r#"'it'\''s $HOME;`id` '\''q'\'' "d" -n'"#.to_string(),
     };
     e.run(&["new-session", "-d", "-s", "r"]);
-    assert!(e.ready("r:", Duration::from_secs(2)), "the shell of r never settled");
+    assert!(shell_ready(&e, name, "r:"), "the shell of r never settled");
     e.run(&["send-keys", "-t", "r:", "-l", &format!("perl {} {quoted}", p(&prog))]);
     e.run(&["send-keys", "-t", "r:", "Enter"]);
     t.ok(&format!("{name}: the program runs"), wait_until(Duration::from_secs(15), || lines_of(&args_txt) == 2));

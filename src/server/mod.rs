@@ -2148,7 +2148,7 @@ impl Server {
                         total += n;
                         pane.term.feed(&buf[..n]);
                         if let Some(t) = &mut pane.typeahead {
-                            t.last_output = Instant::now();
+                            t.saw(&buf[..n]);
                         }
                         if pipe_failure.is_none() {
                             pipe_failure = self.pipes.feed(id, &buf[..n]);
