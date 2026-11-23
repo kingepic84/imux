@@ -15,7 +15,9 @@ fn q_autosavebad() {
     e.run(&["new-window", "-t", "first:", "-n", "a"]);
     wait_until(Duration::from_secs(15), || nonempty("autosave.imux"));
     e.run(&["new-window", "-t", "first:", "-n", "b"]);
-    wait_until(Duration::from_secs(15), || nonempty("autosave.prev"));
+    // A save renames the autosave to `autosave.prev` and then writes the new one, so for a moment the
+    // previous copy is there and the autosave is not: wait for both.
+    wait_until(Duration::from_secs(15), || nonempty("autosave.prev") && nonempty("autosave.imux"));
     t.ok("a good autosave and previous copy exist", nonempty("autosave.imux") && nonempty("autosave.prev"));
     let spid: i32 = e.out(&["display-message", "-p", "#{pid}"]).parse().unwrap();
     unsafe { libc::kill(spid, libc::SIGTERM) };
