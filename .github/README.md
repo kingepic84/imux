@@ -4,7 +4,7 @@
 > is developed. Issues and changes are handled there; you can sign in with your GitHub account.
 > The releases here are copies of the ones published there.
 
-A terminal multiplexer with images in the scrollback.
+A terminal multiplexer that does images right.
 
 Run several shells in one terminal, detach, and pick them up later. Pictures you print stay where
 they are when you scroll, resize, or split.
@@ -13,7 +13,7 @@ they are when you scroll, resize, or split.
 
 - **Pictures.** Images scroll with the text, resize with the pane, and show up in copy mode.
 - **Agent status.** See which panes have a coding agent working, waiting for you, or finished.
-- **Worktrees.** Open a git worktree as its own window with one command.
+- **Worktrees.** Open a worktree as its own window with one command.
 - **Saved sessions.** Layouts are saved as you work and come back after a restart.
 - **Plugins.** Extend it with a program in any language.
 - **Safe output.** Text a program prints can't change your status line or run commands.
