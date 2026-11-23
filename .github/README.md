@@ -7,7 +7,7 @@
 A terminal multiplexer with images in the scrollback.
 
 Run several shells in one terminal, detach, and pick them up later. Pictures you print stay where
-they are when you scroll, resize or split.
+they are when you scroll, resize, or split.
 
 ## Features
 
