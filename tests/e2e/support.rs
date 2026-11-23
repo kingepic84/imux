@@ -465,6 +465,8 @@ pub struct Client {
     child: Box<dyn Child + Send + Sync>,
     buf: Arc<Mutex<Vec<u8>>>,
     screen: Arc<Mutex<vt100::Parser>>,
+    /// The reader thread has taken in everything the client wrote (the terminal reached its end).
+    eof: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl Client {
@@ -503,6 +505,8 @@ impl Client {
         let screen = Arc::new(Mutex::new(vt100::Parser::new(std::num::NonZeroU16::new(rows).unwrap(), std::num::NonZeroU16::new(cols).unwrap(), 0)));
         let sink = Arc::clone(&buf);
         let model = Arc::clone(&screen);
+        let eof = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let ended = Arc::clone(&eof);
         thread::spawn(move || {
             let mut chunk = [0u8; 8192];
             loop {
@@ -514,8 +518,9 @@ impl Client {
                     }
                 }
             }
+            ended.store(true, Ordering::SeqCst);
         });
-        Client { master: pair.master, writer, child, buf, screen }
+        Client { master: pair.master, writer, child, buf, screen, eof }
     }
 
     /// Type bytes into the client's terminal.
@@ -665,6 +670,8 @@ impl Client {
         let start = Instant::now();
         loop {
             if let Ok(Some(s)) = self.child.try_wait() {
+                // what the client wrote last may still be on its way from the terminal to `text()`
+                wait_until(Duration::from_secs(10), || self.eof.load(Ordering::SeqCst));
                 return Some(s.exit_code());
             }
             if start.elapsed() >= limit {

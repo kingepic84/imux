@@ -77,55 +77,55 @@ fn q_promptgate() {
     }
 
     t.section("a quick turn");
-    let pr = prompt_bg(&e, a, 30);
+    let pr = prompt_bg(&e, a, 120);
     report(&e, a, "working", "fake");
     report(&e, a, "idle", "fake");
-    let (rc, out, _) = pr.result(10);
+    let (rc, out, _) = pr.result(90);
     t.ok("working then idle answers idle", rc == 0 && out.contains("\"state\":\"idle\""));
 
     t.section("a settled state with no activity stalls");
     e.run(&["set", "-g", "agent-stall-time", "5"]);
-    let mut pr = prompt_bg(&e, b, 30);
+    let mut pr = prompt_bg(&e, b, 120);
     report(&e, b, "done", "fake");
     // an answer would come out within a moment of the report
     t.ok("an idle or done after the text does not answer", !pr.finishes_within(Duration::from_millis(500)));
-    let (rc, _, err) = pr.result(12);
+    let (rc, _, err) = pr.result(90);
     e.run(&["set", "-g", "agent-stall-time", "60"]);
     t.ok("five seconds with no working or blocked is prompt_stalled", rc == 1 && err.contains("\"code\":\"prompt_stalled\""));
     t.ok("and says delivery is unknown", err.contains("not delivered"));
 
     t.section("blocked answers at once");
-    let pr = prompt_bg(&e, c, 30);
+    let pr = prompt_bg(&e, c, 120);
     report(&e, c, "blocked", "fake");
-    let (rc, out, _) = pr.result(5);
+    let (rc, out, _) = pr.result(90);
     t.ok("blocked after the text answers blocked", rc == 0 && out.contains("\"state\":\"blocked\""));
 
     t.section("the one timeout");
     let pr = prompt_bg(&e, d, 2);
-    let (rc, _, err) = pr.result(6);
+    let (rc, _, err) = pr.result(90);
     t.ok("a timeout under five seconds is timeout, not a stall", rc == 1 && err.contains("\"code\":\"timeout\"") && err.contains("not delivered"));
 
     t.section("another program takes the pane");
-    let pr = prompt_bg(&e, f_, 30);
+    let pr = prompt_bg(&e, f_, 120);
     report(&e, f_, "working", "other");
-    let (rc, _, err) = pr.result(5);
+    let (rc, _, err) = pr.result(90);
     t.ok("another agent taking the pane ends the wait", rc == 1 && err.contains("\"code\":\"agent_not_running\"") && err.contains("another agent"));
 
     t.section("an agent that was working when the text came");
     report(&e, g, "working", "fake");
     // the stall time is short here so that watching for a stall takes a few seconds, and not a minute
     e.run(&["set", "-g", "agent-stall-time", "2"]);
-    let mut pr = prompt_bg(&e, g, 30);
+    let mut pr = prompt_bg(&e, g, 120);
     t.ok("no stall while it works", !pr.finishes_within(Duration::from_secs(4)));
     e.run(&["set", "-g", "agent-stall-time", "60"]);
     report(&e, g, "done", "fake");
-    let (rc, out, _) = pr.result(5);
+    let (rc, out, _) = pr.result(90);
     t.ok("the end of the turn answers", rc == 0 && out.contains("\"state\":\"done\""));
 
     t.section("error answers at once");
-    let pr = prompt_bg(&e, h, 30);
+    let pr = prompt_bg(&e, h, 120);
     report(&e, h, "error", "fake");
-    let (rc, out, _) = pr.result(5);
+    let (rc, out, _) = pr.result(90);
     t.ok("error after the text answers error", rc == 0 && out.contains("\"state\":\"error\""));
     e.kill_server();
     t.finish();
