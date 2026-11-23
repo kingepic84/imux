@@ -11,8 +11,8 @@ they are when you scroll, resize, or split.
 
 ## Features
 
-- **Pictures.** Images scroll with the text, resize with the pane and show up in copy mode.
-- **Agent status.** See which panes have a coding agent working, waiting for you or finished.
+- **Pictures.** Images scroll with the text, resize with the pane, and show up in copy mode.
+- **Agent status.** See which panes have a coding agent working, waiting for you, or finished.
 - **Worktrees.** Open a git worktree as its own window with one command.
 - **Saved sessions.** Layouts are saved as you work and come back after a restart.
 - **Plugins.** Extend it with a program in any language.
@@ -59,7 +59,7 @@ The [install guide](https://docs.imux.cc/start/install/) covers the rest.
 ## Documentation
 
 - Guides: <https://docs.imux.cc>
-- Manual: `man imux` has every key, command, option and limit.
+- Manual: `man imux` has every key, command, option, and limit.
 
 ## License
 

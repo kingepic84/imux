@@ -7,8 +7,8 @@ they are when you scroll, resize, or split.
 
 ## Features
 
-- **Pictures.** Images scroll with the text, resize with the pane and show up in copy mode.
-- **Agent status.** See which panes have a coding agent working, waiting for you or finished.
+- **Pictures.** Images scroll with the text, resize with the pane, and show up in copy mode.
+- **Agent status.** See which panes have a coding agent working, waiting for you, or finished.
 - **Worktrees.** Open a git worktree as its own window with one command.
 - **Saved sessions.** Layouts are saved as you work and come back after a restart.
 - **Plugins.** Extend it with a program in any language.
@@ -35,13 +35,13 @@ curl -fsSL https://imux.cc/install.sh | bash
 brew install kingepic84/tap/imux
 ```
 
-The script is at <https://imux.cc/install.sh>. Release archives, checksums and the other ways to
+The script is at <https://imux.cc/install.sh>. Release archives, checksums, and the other ways to
 install are in the [install guide](https://docs.imux.cc/start/install/).
 
 ## Documentation
 
 - Guides: <https://docs.imux.cc>
-- Manual: `man imux` has every key, command, option and limit.
+- Manual: `man imux` has every key, command, option, and limit.
 
 ## Source
 
