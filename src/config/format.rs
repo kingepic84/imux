@@ -473,15 +473,15 @@ fn variable(body: &str, env: &Env, depth: usize) -> Option<String> {
         if parts.len() < 2 {
             return None;
         }
-        let mut pairs = parts.chunks_exact(2);
-        for pair in pairs.by_ref() {
+        let (pairs, rest) = parts.as_chunks::<2>();
+        for pair in pairs {
             // A bare variable name is looked up; any other condition is expanded.
             let cond = (env.lookup)(&pair[0]).unwrap_or_else(|| tested(&pair[0]));
             if truthy(&cond) {
                 return Some(operand(&pair[1]));
             }
         }
-        return Some(pairs.remainder().first().map_or_else(String::new, |last| operand(last)));
+        return Some(rest.first().map_or_else(String::new, |last| operand(last)));
     }
     for (op, test) in COMPARES {
         if let Some(rest) = body.strip_prefix(op) {

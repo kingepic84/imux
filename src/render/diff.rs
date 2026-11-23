@@ -1260,9 +1260,9 @@ mod tests {
         let again = r.frame(iterm_screen(&t));
         assert_eq!(osc_count(&again), 3);
         assert_eq!(r.cache.map.len(), cached, "a second sight of the same bands encodes nothing");
-        for y in 0..12 {
-            for x in 0..6 {
-                assert!(client.grid.screen[y].cells[x].tile != 0, "cell {x},{y} shows the picture");
+        for (y, row) in client.grid.screen.iter().enumerate().take(12) {
+            for (x, cell) in row.cells.iter().enumerate().take(6) {
+                assert!(cell.tile != 0, "cell {x},{y} shows the picture");
             }
         }
         t.feed(b"\x1b[1;8Hx");
@@ -1299,9 +1299,9 @@ mod tests {
         let bytes = r.frame(iterm_screen(&t));
         assert!(!bytes.is_empty());
         client.feed(&bytes);
-        for y in 0..2 {
-            for x in 0..3 {
-                assert_eq!(client.grid.screen[y].cells[x].tile, 0, "cell {x},{y} still shows the image");
+        for (y, row) in client.grid.screen.iter().enumerate().take(2) {
+            for (x, cell) in row.cells.iter().enumerate().take(3) {
+                assert_eq!(cell.tile, 0, "cell {x},{y} still shows the image");
             }
         }
     }

@@ -114,7 +114,7 @@ impl Animation {
             Some(b) => self.frames.get(b).ok_or("there is no such base frame")?.bitmap.clone(),
             None => {
                 let mut solid = Bitmap::new(size.w, size.h);
-                for px in solid.rgba.chunks_exact_mut(4) {
+                for px in solid.rgba.as_chunks_mut::<4>().0 {
                     px.copy_from_slice(&background);
                 }
                 Arc::new(solid)
@@ -204,7 +204,7 @@ mod tests {
 
     fn solid(w: usize, h: usize, px: [u8; 4]) -> Bitmap {
         let mut b = Bitmap::new(w, h);
-        for p in b.rgba.chunks_exact_mut(4) {
+        for p in b.rgba.as_chunks_mut::<4>().0 {
             p.copy_from_slice(&px);
         }
         b

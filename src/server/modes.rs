@@ -941,7 +941,7 @@ mod tests {
         for k in [Key::Up, Key::Down, Key::PageUp, Key::PageDown, Key::Home, Key::End, Key::Byte(3)] {
             assert_eq!(f.key(k), FilterKey::Pass, "{k:?}");
         }
-        for b in [b'j', b'k', b'q', b'g', b'G'] {
+        for &b in b"jkqgG" {
             assert_eq!(f.key(Key::Byte(b)), FilterKey::Changed, "{} is typed", b as char);
         }
         assert_eq!(f.query(), "jkqgG");
@@ -950,7 +950,7 @@ mod tests {
     #[test]
     fn the_keys_of_a_picker_are_free_until_slash() {
         let mut f = Filter { text: Vec::new(), typing: false, all: Vec::new(), labels: Vec::new() };
-        for b in [b'j', b'k', b'q', b'g', b'G', b'a'] {
+        for &b in b"jkqgGa" {
             assert_eq!(f.key(Key::Byte(b)), FilterKey::Pass);
         }
         assert_eq!(f.key(Key::Escape), FilterKey::Pass, "no query: Escape closes");

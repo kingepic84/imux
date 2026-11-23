@@ -4,8 +4,7 @@
 #   tests/linux/run.sh sync         copy the sources again (after edits)
 #   tests/linux/run.sh unit [ARGS]  cargo test [ARGS]
 #   tests/linux/run.sh clippy       cargo clippy --all-targets -- -D warnings
-#   tests/linux/run.sh shell T...   build the debug binary, run tests/T.sh ... with tests/shims first on PATH
-#   tests/linux/run.sh suite        build, then tests/run_all.sh (about 35 minutes or more)
+#   tests/linux/run.sh e2e [NAMES]  the end-to-end suite (tests/e2e), or only the tests named
 #   tests/linux/run.sh sh [CMD]     a shell (or CMD) in the container
 #   tests/linux/run.sh down         stop and remove the container; `down --all` also removes the volumes
 # The sources are copied, not mounted, and the build output lives in a volume: a bind mount is slow
@@ -34,12 +33,9 @@ case "${1:-}" in
   clippy)
     run "cd /work && cargo clippy --all-targets -- -D warnings"
     ;;
-  shell)
+  e2e)
     shift
-    run "cd /work && cargo build 2>&1 | tail -2 && for t in $*; do echo \"== \$t\"; PATH=/work/tests/shims:\$PATH bash tests/\$t.sh 2>&1; done"
-    ;;
-  suite)
-    run "cd /work && cargo build 2>&1 | tail -2 && PATH=/work/tests/shims:\$PATH bash tests/run_all.sh"
+    run "cd /work && cargo test --test e2e -- $*"
     ;;
   sh)
     shift

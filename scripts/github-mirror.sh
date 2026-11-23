@@ -15,7 +15,7 @@
 set -eu
 
 # Paths left out of the mirror: the CI workflows and the files that only they use.
-EXCLUDE=".forgejo tests/shard.py tests/shard-times.tsv"
+EXCLUDE=".forgejo"
 
 GITHUB_REPO="https://github.com/kingepic84/imux.git"
 BRANCH="main"
