@@ -82,6 +82,7 @@ mod q_inputoff;
 mod m7_prompt;
 mod s_socket;
 mod q_history;
+mod q_historylate;
 mod s_snapshot;
 mod q_panestemplate;
 mod m9_config;

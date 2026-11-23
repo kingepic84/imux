@@ -10,7 +10,7 @@ use std::fs::{self, DirBuilder, File, OpenOptions};
 use std::io::{self, Read, Write};
 use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -103,6 +103,10 @@ struct History {
     keep: AtomicUsize,
     interval: AtomicU64,
     last: Mutex<Option<Instant>>,
+    /// A rolling copy was left out only because the last one was too recent, and the layout it would
+    /// have held may not be in any copy yet: it is written once the interval has passed, even if
+    /// the layout does not change again (the autosave itself would have nothing new to write).
+    owed: AtomicBool,
 }
 
 #[derive(Clone)]
@@ -128,6 +132,22 @@ impl Store {
     pub fn set_history(&self, keep: usize, interval: u64) {
         self.history.keep.store(keep, Ordering::Relaxed);
         self.history.interval.store(interval, Ordering::Relaxed);
+    }
+
+    /// A rolling copy is owed (see `History::owed`) and the interval since the last one has passed.
+    pub fn history_due(&self) -> bool {
+        if !self.history.owed.load(Ordering::Relaxed) {
+            return false;
+        }
+        let wait = Duration::from_secs(self.history.interval.load(Ordering::Relaxed));
+        let last = self.history.last.lock().unwrap_or_else(|p| p.into_inner());
+        last.is_none_or(|t| t.elapsed() >= wait)
+    }
+
+    /// Write the rolling copy that is owed, from the layout as it is now. The autosave files are
+    /// not touched: the autosave already holds this layout.
+    pub fn write_owed_history(&self, text: &str) -> io::Result<()> {
+        self.save_history(text)
     }
 
     fn history_dir(&self) -> PathBuf {
@@ -170,11 +190,14 @@ impl Store {
     fn save_history(&self, text: &str) -> io::Result<()> {
         let keep = self.history.keep.load(Ordering::Relaxed);
         if keep == 0 {
+            self.history.owed.store(false, Ordering::Relaxed);
             return Ok(());
         }
         let wait = Duration::from_secs(self.history.interval.load(Ordering::Relaxed));
         let mut last = self.history.last.lock().unwrap_or_else(|p| p.into_inner());
         if last.is_some_and(|t| t.elapsed() < wait) {
+            // too soon: this layout may be in no copy, so one is owed when the interval is over
+            self.history.owed.store(true, Ordering::Relaxed);
             return Ok(());
         }
         let stamps = self.history_stamps()?;
@@ -183,6 +206,9 @@ impl Store {
             let same = read_limited(&self.history_dir().join(format!("{newest}.{EXT}"))).is_ok_and(|old| without_time(&old) == without_time(text));
             if same || *newest >= now {
                 *last = Some(Instant::now());
+                // the newest copy already holds this layout, or it was made in this very second
+                // (copies are named by the second) and holds another one
+                self.history.owed.store(!same, Ordering::Relaxed);
                 return Ok(());
             }
         }
@@ -191,6 +217,7 @@ impl Store {
         self.ensure_dir(&self.history_dir())?;
         write_atomic(&self.history_dir().join(format!("{now}.{EXT}")), text.as_bytes())?;
         *last = Some(Instant::now());
+        self.history.owed.store(false, Ordering::Relaxed);
         let mut all = stamps;
         all.push(now);
         let excess = all.len().saturating_sub(keep);
@@ -606,6 +633,41 @@ mod tests {
         assert_eq!(mode(&root.join(SNAPSHOTS).join(HISTORY)), 0o700);
         let file = root.join(SNAPSHOTS).join(HISTORY).join(&history_files(&root)[0]);
         assert_eq!(mode(&file), 0o600);
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn a_copy_left_out_for_coming_too_soon_is_owed_and_written_when_the_interval_is_over() {
+        let root = scratch("hist-owed");
+        let store = Store::new(root.clone());
+        old_copy(&root, 100, &snap("one"));
+        store.set_history(5, 3600);
+        *store.history.last.lock().unwrap() = Some(Instant::now());
+        assert!(!store.history_due(), "nothing is owed yet");
+        // a change comes inside the interval: no copy, but one is owed
+        store.save_autosave(&snap("two")).unwrap();
+        assert_eq!(history_files(&root), ["100.imux"]);
+        assert!(!store.history_due(), "owed, but the interval has not passed");
+        // the interval passes with no further change: the owed copy is written from the layout as it is
+        *store.history.last.lock().unwrap() = Some(Instant::now() - Duration::from_secs(7200));
+        assert!(store.history_due());
+        store.write_owed_history(&format::encode(&snap("two"))).unwrap();
+        assert_eq!(history_files(&root).len(), 2);
+        assert!(!store.history_due(), "paid");
+        let newest = history_files(&root).pop().unwrap();
+        assert_eq!(fs::read_to_string(root.join(SNAPSHOTS).join(HISTORY).join(newest)).unwrap(), format::encode(&snap("two")));
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn nothing_is_owed_when_the_newest_copy_already_holds_the_layout() {
+        let root = scratch("hist-not-owed");
+        let store = Store::new(root.clone());
+        old_copy(&root, 100, &snap("one"));
+        store.set_history(5, 0);
+        store.save_autosave(&snap("one")).unwrap();
+        assert!(!store.history_due());
+        assert_eq!(history_files(&root), ["100.imux"]);
         fs::remove_dir_all(&root).unwrap();
     }
 

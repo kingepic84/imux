@@ -14,6 +14,10 @@ use super::Store;
 pub struct Job {
     pub text: String,
     pub hash: u64,
+    /// Only the rolling copy that is owed (`Store::history_due`) is written: the autosave files
+    /// already hold this text and are left as they are (rewriting them would push the older
+    /// previous copy out).
+    pub history_only: bool,
 }
 
 /// What became of a job.
@@ -36,7 +40,11 @@ impl Writer {
         let thread = thread::Builder::new().name("autosave".to_string()).spawn(move || {
             for job in queue {
                 slow_down_for_tests();
-                let result = store.save_autosave_text(&job.text).map_err(|e| format!("autosave: {e}"));
+                let result = if job.history_only {
+                    store.write_owed_history(&job.text).map_err(|e| format!("autosave history: {e}"))
+                } else {
+                    store.save_autosave_text(&job.text).map_err(|e| format!("autosave: {e}"))
+                };
                 if finished.send(Done { hash: job.hash, result }).is_err() {
                     break;
                 }
@@ -124,8 +132,8 @@ mod tests {
     fn writes_happen_in_the_order_they_were_asked_for() {
         let dir = scratch("order");
         let mut w = Writer::spawn(Store::new(dir.clone())).unwrap();
-        w.submit(Job { text: "first\n".into(), hash: 1 }).unwrap();
-        w.submit(Job { text: "second\n".into(), hash: 2 }).unwrap();
+        w.submit(Job { text: "first\n".into(), hash: 1, history_only: false }).unwrap();
+        w.submit(Job { text: "second\n".into(), hash: 2, history_only: false }).unwrap();
         assert!(w.busy());
         let done = w.flush();
         assert_eq!(done.iter().map(|d| d.hash).collect::<Vec<_>>(), vec![1, 2]);
@@ -142,7 +150,7 @@ mod tests {
         let dir = scratch("fail");
         fs::write(&dir, "a file where the state directory should be").unwrap();
         let mut w = Writer::spawn(Store::new(dir.clone())).unwrap();
-        w.submit(Job { text: "x\n".into(), hash: 7 }).unwrap();
+        w.submit(Job { text: "x\n".into(), hash: 7, history_only: false }).unwrap();
         let done = w.flush();
         assert_eq!(done.len(), 1);
         assert_eq!(done[0].hash, 7);
@@ -156,7 +164,7 @@ mod tests {
         let dir = scratch("poll");
         let mut w = Writer::spawn(Store::new(dir.clone())).unwrap();
         assert!(w.poll().is_empty());
-        w.submit(Job { text: "kept\n".into(), hash: 3 }).unwrap();
+        w.submit(Job { text: "kept\n".into(), hash: 3, history_only: false }).unwrap();
         let rest = w.shutdown();
         assert_eq!(rest.len(), 1);
         assert_eq!(fs::read_to_string(dir.join("autosave.imux")).unwrap(), "kept\n");

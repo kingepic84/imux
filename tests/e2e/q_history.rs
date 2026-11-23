@@ -27,6 +27,7 @@ fn q_history() {
     // each change of state makes a new rolling copy once the interval has passed since the last one
     let newest = || names().into_iter().rfind(|n| n.ends_with(".imux")).unwrap_or_default();
     for n in ["w1", "w2", "w3"] {
+        // (no waiting for the interval: a change that comes inside it still gets its copy, later)
         let before = newest();
         e.run(&["new-window", "-t", "alpha:", "-n", n]);
         assert!(wait_until(Duration::from_secs(40), || newest() != before), "no rolling copy was made for {n}");

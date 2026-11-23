@@ -67,7 +67,7 @@ impl Server {
         if !force && self.autosaved == Some(hash) {
             return None;
         }
-        Some(Job { text: format::encode(&snap), hash })
+        Some(Job { text: format::encode(&snap), hash, history_only: false })
     }
 
     /// Take in what the autosave thread has finished; with `wait`, first let it finish everything
@@ -123,7 +123,29 @@ impl Server {
         }
         self.autosave_at = Instant::now();
         self.forget_moved_dirs();
-        let Some(job) = self.autosave_job(false) else { return };
+        let job = match self.autosave_job(false) {
+            Some(job) => job,
+            None => {
+                // Nothing changed since the last autosave, but a rolling copy may be owed: the last
+                // change came inside the interval of the one before and was left out. It is written
+                // now, from the layout as it is.
+                if !self.store.as_ref().is_some_and(|s| s.history_due()) {
+                    return;
+                }
+                match self.autosave_job(true) {
+                    Some(job) => Job { history_only: true, ..job },
+                    None => return,
+                }
+            }
+        };
+        if job.history_only && self.writer.is_none() {
+            if let Some(store) = &self.store
+                && let Err(e) = store.write_owed_history(&job.text)
+            {
+                log::warn(&format!("autosave history: {e}"));
+            }
+            return;
+        }
         let sent = match &mut self.writer {
             Some(writer) => writer.submit(job),
             None => Err(String::new()),
