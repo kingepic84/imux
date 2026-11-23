@@ -353,7 +353,10 @@ fn run(args: &[String]) -> Result<i32, Failure> {
             if !m.get_flag("no-man") {
                 plan.man = match m.get_one::<String>("man-dir") {
                     Some(dir) => Some(std::path::PathBuf::from(dir).join("man1/imux.1")),
-                    None => imux::setup::default_man_path(xdg.as_deref(), home.as_deref()),
+                    None => {
+                        plan.man_present = std::env::current_exe().ok().and_then(|exe| imux::setup::bundled_manpage(&exe));
+                        imux::setup::default_man_path(xdg.as_deref(), home.as_deref())
+                    }
                 };
                 if plan.man.is_none() {
                     return Err(Failure::Io(std::io::Error::other("HOME is not set (or give --man-dir)")));

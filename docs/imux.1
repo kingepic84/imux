@@ -1077,16 +1077,23 @@ where your agent reads skills from, and run
 to see whether the file at the default place is there and the same.
 .TP
 .B imux setup [\-\-man\-dir dir] [\-\-skill\-path file] [\-\-shell name] [\-\-no\-man] [\-\-no\-skill] [\-\-no\-shell]
-Install the manual and the agent skill, and add one line to your shell startup file, unless they are
+Install the manpage and the agent skill, and add one line to your shell startup file, unless they are
 already there.
-The manual and the skill are built into this imux, so what is installed matches it.
-The manual goes to
+The manpage and the skill are built into this imux, so what is installed matches it.
+The manpage goes to
 .I dir/man1/imux.1
 (default
 .IR $XDG_DATA_HOME/man/man1/imux.1 ,
 else
-.IR ~/.local/share/man/man1/imux.1 )
-and the skill to
+.IR ~/.local/share/man/man1/imux.1 ).
+When a manpage came with the binary (a package such as Homebrew's puts it at
+.I share/man/man1/imux.1
+next to the binary's
+.I bin
+directory) and nothing is at that default place yet, the manpage is left out and nothing is said about it;
+give
+.B \-\-man\-dir
+to install one anyway. The skill goes to
 .I file
 (default: the place
 .B imux skill path

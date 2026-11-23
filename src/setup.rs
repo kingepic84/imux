@@ -81,6 +81,9 @@ pub struct ShellRc {
 #[derive(Debug, Default)]
 pub struct Plan {
     pub man: Option<PathBuf>,
+    /// A manpage that came with this binary (see `bundled_manpage`). When the destination is not
+    /// there yet, the manpage step then does nothing and says nothing.
+    pub man_present: Option<PathBuf>,
     pub skill: Option<PathBuf>,
     pub shell: Option<ShellRc>,
     /// The user's shell, when `imux init` has no line for it: said in the report, nothing added.
@@ -106,6 +109,19 @@ pub fn default_man_path(xdg_data_home: Option<&str>, home: Option<&str>) -> Opti
         _ => return None,
     };
     Some(base.join("man/man1/imux.1"))
+}
+
+/// The manpage that was installed together with the binary `exe`, if there is one. A package puts
+/// the binary at `<prefix>/bin/imux` and the page at `<prefix>/share/man/man1/imux.1`, which is what
+/// Homebrew and the distributions do; a symlink to the binary is followed, since Homebrew links
+/// `bin/imux` into its Cellar.
+pub fn bundled_manpage(exe: &Path) -> Option<PathBuf> {
+    let exe = exe.canonicalize().unwrap_or_else(|_| exe.to_path_buf());
+    let prefix = exe.parent()?.parent()?;
+    ["share/man/man1/imux.1", "share/man/man1/imux.1.gz", "man/man1/imux.1", "man/man1/imux.1.gz"]
+        .iter()
+        .map(|rel| prefix.join(rel))
+        .find(|p| p.is_file())
 }
 
 /// Add `line` at the end of the startup file `path`, once: a file that already mentions `imux init`
@@ -185,7 +201,9 @@ fn line(what: &str, path: &Path, outcome: &Outcome) -> String {
 /// Do the plan and report, one line per file. The first failure stops it.
 pub fn run(plan: &Plan) -> io::Result<String> {
     let mut report = String::new();
-    if let Some(path) = &plan.man {
+    // A manpage that came with the binary is already where man looks: there is nothing to do or say.
+    let man_there = plan.man_present.is_some() && std::fs::symlink_metadata(plan.man.as_deref().unwrap_or(Path::new(""))).is_err();
+    if let Some(path) = plan.man.as_ref().filter(|_| !man_there) {
         let outcome = put(path, MAN).map_err(|e| io::Error::new(e.kind(), format!("{}: {e}", path.display())))?;
         report.push_str(&line("manual", path, &outcome));
         if matches!(outcome, Outcome::Installed | Outcome::Updated)
@@ -389,6 +407,38 @@ mod tests {
         assert!(run(&plan).unwrap().contains("shell: already set up"));
         let other = Plan { unsupported_shell: Some("/usr/bin/nu".into()), ..Plan::default() };
         assert!(run(&other).unwrap().contains("not for /usr/bin/nu"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_manpage_next_to_the_binary_is_found_through_a_symlink() {
+        let dir = scratch("bundled");
+        std::fs::create_dir_all(dir.join("keg/bin")).unwrap();
+        std::fs::create_dir_all(dir.join("keg/share/man/man1")).unwrap();
+        std::fs::create_dir_all(dir.join("prefix/bin")).unwrap();
+        std::fs::write(dir.join("keg/bin/imux"), "x").unwrap();
+        assert_eq!(bundled_manpage(&dir.join("keg/bin/imux")), None, "no page, nothing found");
+        std::fs::write(dir.join("keg/share/man/man1/imux.1"), ".TH IMUX 1\n").unwrap();
+        let found = bundled_manpage(&dir.join("keg/bin/imux")).expect("found next to the binary");
+        assert!(found.ends_with("keg/share/man/man1/imux.1"), "{}", found.display());
+        std::os::unix::fs::symlink(dir.join("keg/bin/imux"), dir.join("prefix/bin/imux")).unwrap();
+        assert!(bundled_manpage(&dir.join("prefix/bin/imux")).is_some(), "a symlink to the binary is followed");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_manpage_that_came_with_the_binary_is_skipped_without_a_word() {
+        let dir = scratch("present");
+        let dest = dir.join("home/.local/share/man/man1/imux.1");
+        let plan = Plan { man: Some(dest.clone()), man_present: Some(dir.join("elsewhere/imux.1")), skill: Some(dir.join("skills/imux/SKILL.md")), ..Plan::default() };
+        let report = run(&plan).unwrap();
+        assert!(!report.contains("manual") && !report.contains("MANPATH"), "{report}");
+        assert!(!dest.exists(), "nothing was written");
+        assert!(report.contains("skill: installed"), "the other steps still run: {report}");
+        // a copy of our own that is already there is still kept up to date
+        std::fs::create_dir_all(dest.parent().unwrap()).unwrap();
+        std::fs::write(&dest, "old").unwrap();
+        assert!(run(&plan).unwrap().contains("manual: updated"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

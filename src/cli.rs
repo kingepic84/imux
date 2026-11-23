@@ -604,7 +604,7 @@ pub fn tree() -> Command {
         )
         .subcommand(
             Command::new("setup")
-                .about("install the manual and the agent skill, and add imux init to your shell startup file, if not done yet")
+                .about("install the manpage and the agent skill, and add imux init to your shell startup file, if not done yet")
                 .arg(Arg::new("man-dir").long("man-dir").value_name("dir").help("where man1/imux.1 goes (default: ~/.local/share/man)"))
                 .arg(Arg::new("skill-path").long("skill-path").value_name("file").help("where SKILL.md goes (default: ~/.claude/skills/imux/SKILL.md)"))
                 .arg(Arg::new("no-man").long("no-man").action(ArgAction::SetTrue).help("leave the manual alone"))
