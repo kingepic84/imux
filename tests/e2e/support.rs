@@ -249,8 +249,14 @@ impl Env {
     pub fn barrier(&self, c: &Client, session: &str) {
         let n = BARRIERS.fetch_add(1, Ordering::Relaxed);
         let mark = format!("SYNC{n}Q");
-        self.run(&["display-message", "-t", &format!("{session}:"), &mark]);
-        assert!(c.wait_seen(&mark, Duration::from_secs(15)), "the client never drew {mark}");
+        // A message stays on the screen for `display-time`. On a machine that is short of CPU the next
+        // frame can come after it has gone, and then it is never drawn: so it is sent again until one
+        // is. Any of them proves it: what was queued before the first was drawn before it.
+        let drawn = (0..40).any(|_| {
+            self.run(&["display-message", "-t", &format!("{session}:"), &mark]);
+            c.wait_seen(&mark, Duration::from_millis(1500))
+        });
+        assert!(drawn, "the client never drew {mark}");
     }
 
     /// Wait until a pane's shell is ready for typing: the pane shows something and has stopped
@@ -806,14 +812,12 @@ pub fn hold(e: &Env, pane: &str) {
     e.run(&["send-keys", "-t", &format!("%{pane}"), "-l", &format!("sh {holder} {pipe}")]);
     e.run(&["send-keys", "-t", &format!("%{pane}"), "Enter"]);
     let ready = e.path(&format!("ready{pane}"));
-    for _ in 0..50 {
-        if ready.exists() {
-            break;
-        }
-        feed(pipe.clone(), format!("echo >{}", ready.display()));
-        thread::sleep(Duration::from_millis(200));
-    }
-    assert!(ready.exists(), "the holder of pane {pane} did not start");
+    // One line, sent once: its writer waits for the holder to open the pipe, however long that takes.
+    // Sending it again and again would leave several writers waiting, and when the holder opened the
+    // pipe they would all be let in together: it reads one line, closes the pipe, and the others are
+    // lost (that is how a later command could be lost, and wait for ever).
+    feed(pipe.clone(), format!("echo >{}", ready.display()));
+    assert!(wait_until(Duration::from_secs(120), || ready.exists()), "the holder of pane {pane} did not start");
 }
 
 /// Run `command` as a descendant of the holder of pane `%N` and wait (20 seconds) for it. The exit
@@ -823,7 +827,21 @@ pub fn in_pane(e: &Env, pane: &str, command: &str) -> (i32, String) {
     let rc = e.path(&format!("rc{n}"));
     let out = e.path(&format!("o{n}"));
     feed(p(&e.path(&format!("fifo{pane}"))), format!("{{ {command}; }} >{} 2>&1; echo $? >{}", out.display(), rc.display()));
-    wait_until(Duration::from_secs(20), || rc.exists() && std::fs::read_to_string(&rc).map(|s| !s.trim().is_empty()).unwrap_or(false));
+    // The command may wait a long time for a CPU on a busy machine. Never go on without it: the next
+    // command would queue behind this one on the same pipe, and the writers of the two, both blocked
+    // on the pipe, would open it in any order.
+    let finished = wait_until(Duration::from_secs(180), || rc.exists() && std::fs::read_to_string(&rc).map(|s| !s.trim().is_empty()).unwrap_or(false));
+    if !finished {
+        let holders = Command::new("pgrep").args(["-fa", "pane_holder"]).output().map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default();
+        let log = e.server_log();
+        let tail: Vec<&str> = log.lines().rev().take(15).collect();
+        panic!(
+            "the command in pane {pane} did not finish: {command}\nout file: {:?}\nholders running (all tests): {holders}\nthe pane shows:\n{}\nserver log, last lines:\n{}",
+            std::fs::read_to_string(&out).ok(),
+            e.capture(&format!("%{pane}")),
+            tail.into_iter().rev().collect::<Vec<_>>().join("\n")
+        );
+    }
     let code = std::fs::read_to_string(&rc).ok().and_then(|s| s.trim().parse().ok()).unwrap_or(-1);
     (code, std::fs::read_to_string(&out).unwrap_or_default())
 }
