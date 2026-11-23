@@ -309,6 +309,12 @@ Delete the newest paste buffer.
 .TP
 .B =
 Choose a paste buffer and paste it.
+.TP
+.B C\-s, C\-r
+Save the sessions as the snapshot
+.BR resurrect ,
+or bring that snapshot back (see
+.BR PERSISTENCE ).
 .PD
 .PP
 Personal preferences, such as another prefix or
@@ -2707,10 +2713,22 @@ command lines as the system reports them: a program that rewrites its own argume
 with those.
 Pictures and scrollback are not saved.
 .PP
-Named snapshots are kept until deleted.
-No key is bound to these commands (use
-.BR bind );
-the
+Named snapshots are kept until deleted, also when the server ends.
+.B C\-s
+and
+.B C\-r
+after the prefix run
+.B save\-session resurrect
+and
+.B restore\-session resurrect
+and show the answer in the status line; each save replaces the last, and a session that is already
+running is left alone when it is restored.
+Other keys, other names or none at all are a matter for
+.B bind
+and
+.B unbind
+in the configuration file.
+The
 .B imux
 subcommands print the server's answer and need a running server.
 .TP

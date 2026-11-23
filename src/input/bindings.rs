@@ -12,6 +12,9 @@ use crate::proto::{PersistOp, WorktreeArgs, WorktreeRemoveArgs};
 use crate::session::layout::{Direction, Preset, Split};
 
 /// What `i` shows: where the client is.
+/// The name of the snapshot that the default keys `prefix C-s` and `prefix C-r` save and restore.
+pub const MANUAL_SNAPSHOT: &str = "resurrect";
+
 pub const INFO_FORMAT: &str = "[#S] #I:#W, pane #P - #{pane_current_command} in #{pane_current_path}";
 
 /// The buffer commands besides the plain `paste-buffer` of `]`. `None` for a name means the
@@ -746,6 +749,10 @@ impl Bindings {
         b.bind("'", Command::WindowByNumber, false);
         b.bind(".", Command::MoveWindowTo, false);
         b.bind("i", Command::DisplayMessage(INFO_FORMAT.to_string()), false);
+        // Save and restore by hand, on the keys other multiplexers' resurrect plugins use. The snapshot
+        // has a fixed name, so each save replaces the last. `bind` and `unbind` change them as usual.
+        b.bind("C-s", Command::Persist(PersistOp::Save(Some(MANUAL_SNAPSHOT.to_string()))), false);
+        b.bind("C-r", Command::Persist(PersistOp::Restore(Some(MANUAL_SNAPSHOT.to_string()))), false);
         b
     }
 }
@@ -768,6 +775,14 @@ mod tests {
         assert_eq!(b.prefix2.as_ref().map(|(_, raw)| raw.as_slice()), Some(&[0x01][..]));
         b.set_prefix2(None).unwrap();
         assert!(!b.is_prefix(&c_a));
+    }
+
+    #[test]
+    fn the_manual_save_and_restore_keys_are_bound_to_one_named_snapshot() {
+        let b = Bindings::defaults();
+        assert_eq!(lookup(&b, "C-s").unwrap().command, Command::Persist(PersistOp::Save(Some("resurrect".to_string()))));
+        assert_eq!(lookup(&b, "C-r").unwrap().command, Command::Persist(PersistOp::Restore(Some("resurrect".to_string()))));
+        assert_eq!(MANUAL_SNAPSHOT, "resurrect");
     }
 
     #[test]

@@ -51,6 +51,7 @@ mod q_promptgate;
 mod q_prefix2;
 mod q_readonly;
 mod q_relative;
+mod q_resurrect;
 mod q_status;
 mod q_statusalign;
 mod q_useropt;
