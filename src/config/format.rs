@@ -533,19 +533,38 @@ fn variable(body: &str, env: &Env, depth: usize) -> Option<String> {
     if let Some(name) = body.strip_prefix("c:") {
         return Some(command_quote(&(env.lookup)(name).unwrap_or_default()));
     }
-    if let Some(rest) = body.strip_prefix("s/") {
-        let mut parts = rest.splitn(3, '/');
-        if let (Some(from), Some(to), Some(tail)) = (parts.next(), parts.next(), parts.next())
-            && let Some(name) = tail.strip_prefix(':')
-        {
-            let value = env.value(name).unwrap_or_default();
-            return Some(if from.is_empty() { value } else { value.replace(from, to) });
+    if let Some(rest) = body.strip_prefix("s/")
+        && let Some((pairs, name)) = substitutions(rest)
+    {
+        let mut value = env.value(name).unwrap_or_default();
+        for (from, to) in pairs {
+            if !from.is_empty() {
+                value = value.replace(from, to);
+            }
         }
+        return Some(value);
     }
     if let Some(value) = modified(body, env, depth) {
         return Some(value);
     }
     Some(env.value(body).unwrap_or_default())
+}
+
+/// The substitutions of `#{s/from/to/:name}` and the variable they apply to. Several may be chained
+/// with a semicolon, `#{s/a/b/;s/c/d/:name}`, and are applied left to right, each to the result of
+/// the one before. `rest` is the body after the first `s/`; `None` when it is not that shape (it is
+/// then read as a variable name).
+fn substitutions(mut rest: &str) -> Option<(Vec<(&str, &str)>, &str)> {
+    let mut pairs = Vec::new();
+    loop {
+        let (from, after) = rest.split_once('/')?;
+        let (to, after) = after.split_once('/')?;
+        pairs.push((from, to));
+        if let Some(name) = after.strip_prefix(':') {
+            return Some((pairs, name));
+        }
+        rest = after.strip_prefix(";s/")?;
+    }
 }
 
 /// The version a configuration may test with `#{version}`: the one the `tmux` shim reports.
@@ -797,6 +816,24 @@ mod tests {
     fn substitution_rewrites_the_value() {
         assert_eq!(expand("#{s/my-wrapper/claude/:pane_current_command}", &cmd), "claude");
         assert_eq!(expand("#{s/zzz/q/:pane_current_command}", &cmd), "my-wrapper");
+    }
+
+    #[test]
+    fn substitutions_chain_with_semicolons_and_apply_left_to_right() {
+        // the format from a real configuration: several program names that all mean one thing
+        let f = "#{s/2.1.325/claude/;s/2.1.327/claude/;s/aca-claude-go/claude/:pane_current_command}";
+        let with = |name: &'static str| move |n: &str| (n == "pane_current_command").then(|| name.to_string());
+        assert_eq!(expand(f, &with("2.1.325")), "claude");
+        assert_eq!(expand(f, &with("2.1.327")), "claude");
+        assert_eq!(expand(f, &with("aca-claude-go")), "claude");
+        assert_eq!(expand(f, &with("vim")), "vim", "nothing matches: the value is left as it was");
+        // each substitution works on the result of the one before it
+        assert_eq!(expand("#{s/a/b/;s/b/c/:pane_current_command}", &with("a")), "c");
+        assert_eq!(expand("#{s/b/c/;s/a/b/:pane_current_command}", &with("a")), "b");
+        // an empty pattern changes nothing, also inside a chain
+        assert_eq!(expand("#{s//x/;s/a/b/:pane_current_command}", &with("a")), "b");
+        // a chain that is not well formed is not a substitution: it is read as a variable name
+        assert_eq!(expand("#{s/a/b/;x:pane_current_command}", &with("a")), "");
     }
 
     #[test]

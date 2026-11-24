@@ -4978,6 +4978,13 @@ window naming; the format understands
 .B #{pane_current_command}
 and
 .B #{s/from/to/:pane_current_command}
+(the text
+.I from
+is replaced by
+.IR to ).
+Several substitutions can be chained, separated by semicolons; they are applied from left to
+right, each to the result of the one before:
+.B #{s/2.1.325/claude/;s/aca\-claude\-go/claude/:pane_current_command}
 .TP
 .B default\-shell
 the shell started in panes; empty means
