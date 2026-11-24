@@ -17,6 +17,7 @@ pub mod fuzzy;
 pub mod image;
 pub mod init;
 pub mod input;
+pub mod jsonedit;
 pub mod log;
 pub mod paths;
 pub mod persist;

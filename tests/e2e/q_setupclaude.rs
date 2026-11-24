@@ -1,5 +1,5 @@
 //! `imux setup` puts the Claude Code hook (a script and a settings.json that calls it) next to the
-//! skill, never rewrites a settings.json that is already there, and leaves Claude Code alone with
+//! skill, adds the hook to a settings.json that is already there (keeping the rest, with a copy of the old file), and leaves Claude Code alone with
 //! `--no-claude-hooks` or `--no-skill`; `--claude-dir` names another directory.
 use crate::support::*;
 
@@ -34,9 +34,19 @@ fn q_setupclaude() {
     let mine = "{\"permissions\":{\"allow\":[\"Bash(ls)\"]}}\n";
     std::fs::write(&settings, mine).unwrap();
     let r = e.run(&["setup", "--no-man", "--no-shell"]);
-    t.ok("it is not changed", std::fs::read_to_string(&settings).unwrap() == mine);
-    t.matches("the entries to add are printed", "imux does not edit it.*\\n(.*\\n)*.*imux-claude-hook.sh resume", &r.all());
-    t.ok("the script is installed anyway", script.exists());
+    let now = std::fs::read_to_string(&settings).unwrap();
+    t.ok("the hook is added to it", now.contains("sh ~/.claude/imux-claude-hook.sh session") && now.contains("sh ~/.claude/imux-claude-hook.sh resume"));
+    t.ok("and what was in it stays", now.contains("\"permissions\":{\"allow\":[\"Bash(ls)\"]}"));
+    t.matches("it says so", "added the hook to .*settings.json \\(SessionStart and UserPromptSubmit\\)", &r.all());
+    t.ok("the file as it was is kept", std::fs::read_to_string(home.join(".claude/settings.json.imux-backup")).unwrap() == mine);
+    t.ok("the script is installed", script.exists());
+    let r = e.run(&["setup", "--no-man", "--no-shell"]);
+    t.matches("a second run changes nothing", "already calls the script", &r.all());
+    t.ok("the file is the same", std::fs::read_to_string(&settings).unwrap() == now);
+    std::fs::write(&settings, "{ // not strict JSON\n}").unwrap();
+    let r = e.run(&["setup", "--no-man", "--no-shell"]);
+    t.ok("a file that cannot be read safely is left as it is", std::fs::read_to_string(&settings).unwrap() == "{ // not strict JSON\n}");
+    t.matches("and the entries are printed", "could not be changed safely.*\\n(.*\\n)*.*imux-claude-hook.sh resume", &r.all());
 
     t.section("the ways to leave it alone");
     let other = e.path("other");

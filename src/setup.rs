@@ -276,17 +276,74 @@ fn install_claude(hooks: &ClaudeHooks) -> io::Result<String> {
             put(&settings, &wanted).map_err(|e| io::Error::new(e.kind(), format!("{}: {e}", settings.display())))?;
             report.push_str(&format!("claude hook: installed {} (it calls the script)\n", settings.display()));
         }
-        Some(text) if text.contains(CLAUDE_HOOK_NAME) => {
-            report.push_str(&format!("claude hook: {} already calls the script\n", settings.display()));
+        Some(text) if text.trim().is_empty() => {
+            write_replacing(&settings, &wanted).map_err(|e| io::Error::new(e.kind(), format!("{}: {e}", settings.display())))?;
+            report.push_str(&format!("claude hook: {} was empty; it now calls the script\n", settings.display()));
         }
-        Some(text) if text.contains("imux agent name") || text.contains("claude-hook") => {
-            report.push_str(&format!("claude hook: {} has hooks for imux of its own; replace them with the entries below to use the script:\n{wanted}", settings.display()));
-        }
-        Some(_) => {
-            report.push_str(&format!("claude hook: {} exists, and imux does not edit it; add these entries to its \"hooks\" (merge them into the lists you have):\n{wanted}", settings.display()));
+        Some(text) => {
+            let reference = script_reference(&script, hooks.home.as_deref());
+            match merge_claude_settings(&text, &reference) {
+                Ok(merged) if merged.text == text => {
+                    report.push_str(&format!("claude hook: {} already calls the script\n", settings.display()));
+                }
+                Ok(merged) => {
+                    // the file as it was is kept once: a later run must not replace the first copy
+                    let backup = PathBuf::from(format!("{}.imux-backup", settings.display()));
+                    if !backup.exists() {
+                        std::fs::copy(&settings, &backup).map_err(|e| io::Error::new(e.kind(), format!("{}: {e}", backup.display())))?;
+                    }
+                    write_replacing(&settings, &merged.text).map_err(|e| io::Error::new(e.kind(), format!("{}: {e}", settings.display())))?;
+                    let mut said = format!("claude hook: added the hook to {} ({})", settings.display(), merged.added.join(" and "));
+                    if merged.removed > 0 {
+                        said.push_str(&format!(", and took out {} hook{} of imux's own from before", merged.removed, if merged.removed == 1 { "" } else { "s" }));
+                    }
+                    said.push_str(&format!("; the file as it was is kept as {}\n", backup.display()));
+                    report.push_str(&said);
+                }
+                Err(why) => {
+                    report.push_str(&format!(
+                        "claude hook: left {} alone, it could not be changed safely ({why}); add these entries to its \"hooks\" yourself (merge them into the lists you have):\n{wanted}",
+                        settings.display()
+                    ));
+                }
+            }
         }
     }
     Ok(report)
+}
+
+/// The groups of hooks imux wants in Claude Code's settings, for the script written as `reference`.
+fn claude_groups(reference: &str) -> Vec<(&'static str, String)> {
+    let group = |what: &[&str]| {
+        let entries: Vec<String> = what.iter().map(|w| format!("    {{ \"type\": \"command\", \"command\": {} }}", json_string(&format!("sh {reference} {w}")))).collect();
+        format!("{{\n  \"hooks\": [\n{}\n  ]\n}}", entries.join(",\n"))
+    };
+    vec![("SessionStart", group(&["session", "resume"])), ("UserPromptSubmit", group(&["session"]))]
+}
+
+/// `settings.json` text with the hook of imux in it: added to the lists of the events it is for, the
+/// old inline hooks of imux's own taken out (`imux agent name`, the first instructions' script), and
+/// everything else as the person wrote it.
+pub fn merge_claude_settings(text: &str, reference: &str) -> Result<crate::jsonedit::Merged, String> {
+    let events = claude_groups(reference);
+    let is_ours = |t: &str| t.contains(CLAUDE_HOOK_NAME);
+    let is_old = |c: &str| !c.contains(CLAUDE_HOOK_NAME) && (c.contains("imux agent name") || c.contains("imux-agent-name.sh") || c.contains("--source claude-hook"));
+    crate::jsonedit::merge_hooks(text, &crate::jsonedit::Wanted { events: &events, is_ours: &is_ours, is_old: &is_old })
+}
+
+/// Replace the file at `path` with `text` in one step, keeping its mode (settings may be private).
+fn write_replacing(path: &Path, text: &str) -> io::Result<()> {
+    let dir = path.parent().ok_or_else(|| io::Error::other("no directory to write in"))?;
+    let tmp = dir.join(format!(".imux-setup-{}.tmp", std::process::id()));
+    std::fs::write(&tmp, text)?;
+    if let Ok(meta) = std::fs::metadata(path) {
+        let _ = std::fs::set_permissions(&tmp, meta.permissions());
+    }
+    if let Err(e) = std::fs::rename(&tmp, path) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e);
+    }
+    Ok(())
 }
 
 fn line(what: &str, path: &Path, outcome: &Outcome) -> String {
@@ -650,25 +707,51 @@ mod tests {
     }
 
     #[test]
-    fn an_existing_settings_file_is_never_changed_and_the_entries_are_printed() {
+    fn an_existing_settings_file_gets_the_hook_added_with_a_copy_of_the_old_one_and_a_second_run_changes_nothing() {
         let dir = scratch("claude-existing");
         let claude = dir.join("home/.claude");
         std::fs::create_dir_all(&claude).unwrap();
         let mine = "{\n  \"permissions\": { \"allow\": [\"Bash(ls)\"] }\n}\n";
         std::fs::write(claude.join("settings.json"), mine).unwrap();
         let report = run(&hooks_in(&dir)).unwrap();
-        assert_eq!(std::fs::read_to_string(claude.join("settings.json")).unwrap(), mine, "not one byte of it changed");
-        assert!(report.contains("does not edit it") && report.contains("sh ~/.claude/imux-claude-hook.sh resume"), "{report}");
-        assert!(claude.join(CLAUDE_HOOK_NAME).exists(), "the script is installed anyway");
-        // a file that already lists the script, and one with hooks of imux's own from before
-        let listed = "{\"hooks\":{\"SessionStart\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"sh ~/.claude/imux-claude-hook.sh session\"}]}]}}";
-        std::fs::write(claude.join("settings.json"), listed).unwrap();
-        assert!(run(&hooks_in(&dir)).unwrap().contains("already calls the script"));
+        assert!(report.contains("added the hook to") && report.contains("SessionStart and UserPromptSubmit"), "{report}");
+        let now = std::fs::read_to_string(claude.join("settings.json")).unwrap();
+        assert!(now.contains("\"permissions\": { \"allow\": [\"Bash(ls)\"] }") && now.contains("sh ~/.claude/imux-claude-hook.sh resume"), "{now}");
+        assert_eq!(std::fs::read_to_string(claude.join("settings.json.imux-backup")).unwrap(), mine, "the file as it was is kept");
+        assert!(claude.join(CLAUDE_HOOK_NAME).exists());
+        let again = run(&hooks_in(&dir)).unwrap();
+        assert!(again.contains("already calls the script"), "{again}");
+        assert_eq!(std::fs::read_to_string(claude.join("settings.json")).unwrap(), now, "a second run changes nothing");
+        assert_eq!(std::fs::read_to_string(claude.join("settings.json.imux-backup")).unwrap(), mine, "and the first copy stays");
+        // hooks of imux's own from before are taken out
         let old = "{\"hooks\":{\"SessionStart\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"imux agent name 1 x\"}]}]}}";
         std::fs::write(claude.join("settings.json"), old).unwrap();
         let report = run(&hooks_in(&dir)).unwrap();
-        assert!(report.contains("has hooks for imux of its own"), "{report}");
-        assert_eq!(std::fs::read_to_string(claude.join("settings.json")).unwrap(), old);
+        assert!(report.contains("took out 1 hook of imux's own from before"), "{report}");
+        let now = std::fs::read_to_string(claude.join("settings.json")).unwrap();
+        assert!(!now.contains("imux agent name") && now.contains("imux-claude-hook.sh"), "{now}");
+        // a file that cannot be changed safely is left alone and the entries are printed
+        std::fs::write(claude.join("settings.json"), "{ // mine\n}").unwrap();
+        let report = run(&hooks_in(&dir)).unwrap();
+        assert!(report.contains("could not be changed safely") && report.contains("sh ~/.claude/imux-claude-hook.sh resume"), "{report}");
+        assert_eq!(std::fs::read_to_string(claude.join("settings.json")).unwrap(), "{ // mine\n}");
+        // an empty file just gets the settings
+        std::fs::write(claude.join("settings.json"), "  \n").unwrap();
+        assert!(run(&hooks_in(&dir)).unwrap().contains("was empty"));
+        assert!(std::fs::read_to_string(claude.join("settings.json")).unwrap().contains("imux-claude-hook.sh session"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_mode_of_a_settings_file_is_kept() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = scratch("claude-mode");
+        let claude = dir.join("home/.claude");
+        std::fs::create_dir_all(&claude).unwrap();
+        std::fs::write(claude.join("settings.json"), "{}").unwrap();
+        std::fs::set_permissions(claude.join("settings.json"), std::fs::Permissions::from_mode(0o600)).unwrap();
+        run(&hooks_in(&dir)).unwrap();
+        assert_eq!(std::fs::metadata(claude.join("settings.json")).unwrap().permissions().mode() & 0o777, 0o600);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

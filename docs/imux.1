@@ -1125,8 +1125,18 @@ so a restored pane continues its own conversation and not the latest one of the 
 It prints nothing, always succeeds, and does nothing outside imux.
 An existing
 .I settings.json
-is never changed: setup prints the entries to add to it, and says when it already lists the script
-(or has hooks of imux's own from before).
+gets the hook added to the lists of the two events and nothing else changed: your other settings and
+hooks stay as you wrote them, byte for byte, and the hooks of imux's own from before
+(the ones that run
+.B imux agent name
+or report a resume command by themselves) are taken out.
+The file as it was is kept once as
+.IR settings.json.imux\-backup ,
+and a second run changes nothing.
+A file that is not strict JSON (a comment, a trailing comma), or whose
+.B hooks
+is not what Claude Code expects, is left alone, and setup says why and prints the entries to add
+yourself.
 .B \-\-claude\-dir
 names another directory than
 .IR ~/.claude ;
