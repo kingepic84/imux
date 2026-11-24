@@ -16,6 +16,16 @@ regex-lite = "0.1.9"
 unicode-width = "0.2.3"
 vte = "0.15.0"
 
+# Lints that a newer clippy no longer turns on by itself are named here, so that the same mistakes
+# are caught whichever clippy runs (the CI's, or one that is newer).
+[lints.clippy]
+# A correctness lint (deny by default) until clippy 1.97 moved it to pedantic: a condition with a
+# part that can never matter, such as `x || true`, is a logic bug.
+overly_complex_bool_expr = "deny"
+# A complexity lint (warn by default) until clippy 1.97 moved it to pedantic with the one above:
+# a condition that can be written more simply, such as `!(a == b)`.
+nonminimal_bool = "warn"
+
 [profile.release]
 lto = true
 opt-level = 3
