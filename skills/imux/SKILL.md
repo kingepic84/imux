@@ -67,7 +67,11 @@ imux agent read 7 --lines 60
 ```
 
 `pane wait-output` looks at what is already on the pane first, then waits for new output (a literal
-with `--match`, a regular expression with `--regex`). Its timeout is in milliseconds. It ends with
+with `--match`, a regular expression with `--regex`). The line you typed is on the pane too, so a
+word that is in your own command matches it at once, before the command has printed anything. Wait
+for text that only the output has: a regular expression that holds the whole line (`--regex
+'^DONE$'`), or a marker the shell builds when it runs (`echo DONE-$((1+1))` and wait for `DONE-2`).
+Its timeout is in milliseconds. It ends with
 `not_found` when the pane closes and `not_ready` when the program ended. Read with `agent read`
 (your own pane and the panes you spawned; `--ansi` keeps the colors).
 
@@ -125,6 +129,11 @@ imux api-seq
 imux events --wait agent-state-changed --match name=reviewer --match state=idle --since 41 --timeout 60000
 imux events --types pane-exited --since 41
 ```
+
+`api-seq` counts events since the server started, so it prints 0 until something has happened. The
+last line is a stream: it prints the events kept after 41 and then every new one, and it never
+ends by itself (`--match` and `--timeout` apply only with `--wait`). To wait for one event with a
+limit, use `--wait`; to read a stream, run it in the background or stop it yourself.
 
 Exit status 1 with `events_lost` means some events are gone: read the state again with
 `imux agent list` and `imux list-panes -a`.
