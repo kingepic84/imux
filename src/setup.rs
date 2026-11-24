@@ -340,6 +340,86 @@ fn line_for(outcome: &Outcome, path: &Path) -> String {
     line("shell", path, outcome)
 }
 
+/// Kept in the state directory by `imux setup` when it has run: nothing is left to remind of.
+pub const DONE_MARKER: &str = "setup-done";
+/// Kept in the state directory when the reminder was shown: the version of imux it was shown by.
+pub const SEEN_MARKER: &str = "setup-hint-seen";
+
+/// Where imux setup has not been finished, if it can say: the startup file of the user's shell
+/// when it has no `imux init` line. Nothing is said (`None`) when the person turned the reminder
+/// off (`IMUX_NO_SETUP_HINT` set to anything but empty or 0), when `imux setup` has run before
+/// (the marker is in the state directory, also with `--no-shell`), when the shell is one that
+/// `imux init` has no line for, when the startup file is a symlink or not a regular file (setup
+/// leaves those alone, so a reminder could never be answered), and whenever it cannot tell. `env`
+/// reads an environment variable.
+pub fn unfinished(env: &dyn Fn(&str) -> Option<String>, state_dir: Option<&Path>) -> Option<PathBuf> {
+    if env("IMUX_NO_SETUP_HINT").is_some_and(|v| !v.is_empty() && v != "0") {
+        return None;
+    }
+    if state_dir.is_some_and(|d| d.join(DONE_MARKER).exists()) {
+        return None;
+    }
+    let home = env("HOME").filter(|h| !h.is_empty())?;
+    let shell = Shell::named(&env("SHELL")?)?;
+    let rc = rc_file(shell, Path::new(&home), env("ZDOTDIR").as_deref(), env("XDG_CONFIG_HOME").as_deref(), &|p| p.exists());
+    match std::fs::symlink_metadata(&rc) {
+        Ok(meta) if meta.file_type().is_symlink() || !meta.is_file() => None,
+        Ok(_) => match std::fs::read_to_string(&rc) {
+            Ok(text) if text.contains("imux init") => None,
+            Ok(_) => Some(rc),
+            Err(_) => None,
+        },
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Some(rc),
+        Err(_) => None,
+    }
+}
+
+/// Write the marker that says `imux setup` has run. Best effort: a state directory that cannot be
+/// written only means the reminder may come again.
+pub fn mark_done(state_dir: &Path) {
+    if std::fs::create_dir_all(state_dir).is_ok() {
+        let _ = std::fs::write(state_dir.join(DONE_MARKER), format!("{}\n", env!("CARGO_PKG_VERSION")));
+    }
+}
+
+/// Whether the reminder was shown already by this version of imux.
+pub fn seen_by_this_version(state_dir: &Path) -> bool {
+    std::fs::read_to_string(state_dir.join(SEEN_MARKER)).is_ok_and(|v| v.trim() == env!("CARGO_PKG_VERSION"))
+}
+
+/// Remember that this version showed the reminder.
+pub fn mark_seen(state_dir: &Path) {
+    if std::fs::create_dir_all(state_dir).is_ok() {
+        let _ = std::fs::write(state_dir.join(SEEN_MARKER), format!("{}\n", env!("CARGO_PKG_VERSION")));
+    }
+}
+
+/// The rc file as the reminder names it: `~/.zshrc` under the home directory.
+pub fn shown_path(rc: &Path, home: Option<&str>) -> String {
+    match home.and_then(|h| rc.strip_prefix(h).ok()) {
+        Some(rest) => format!("~/{}", rest.display()),
+        None => rc.display().to_string(),
+    }
+}
+
+/// What `imux doctor` says about setup: one line, whatever the state.
+pub fn doctor_line(env: &dyn Fn(&str) -> Option<String>, state_dir: Option<&Path>) -> (String, String) {
+    let text = if state_dir.is_some_and(|d| d.join(DONE_MARKER).exists()) {
+        "imux setup has been run".to_string()
+    } else if let Some(shell) = env("SHELL").as_deref().and_then(Shell::named) {
+        let home = env("HOME");
+        let rc = rc_file(shell, Path::new(home.as_deref().unwrap_or("")), env("ZDOTDIR").as_deref(), env("XDG_CONFIG_HOME").as_deref(), &|p| p.exists());
+        let shown = shown_path(&rc, home.as_deref());
+        match std::fs::read_to_string(&rc) {
+            Ok(text) if text.contains("imux init") => format!("the shell line is in {shown}"),
+            _ => format!("not finished: {shown} has no imux init line (run imux setup)"),
+        }
+    } else {
+        "imux init has no line for your shell, so there is nothing to add to it".to_string()
+    };
+    ("setup".to_string(), text)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -620,5 +700,121 @@ mod tests {
         assert!(text.contains("\"command\": \"sh \\\"/opt/my claude/imux-claude-hook.sh\\\" session\""), "{text}");
         let under = claude_settings(Path::new("/home/me/.claude/imux-claude-hook.sh"), Some(Path::new("/home/me")));
         assert!(under.contains("sh ~/.claude/imux-claude-hook.sh session"), "{under}");
+    }
+
+    type EnvFn = Box<dyn Fn(&str) -> Option<String>>;
+
+    fn env_for(home: &str, shell: &str) -> EnvFn {
+        let (home, shell) = (home.to_string(), shell.to_string());
+        Box::new(move |k| match k {
+            "HOME" => Some(home.clone()),
+            "SHELL" => Some(shell.clone()),
+            _ => None,
+        })
+    }
+
+    fn env_of<'a>(pairs: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<String> + 'a {
+        move |k| pairs.iter().find(|(n, _)| *n == k).map(|(_, v)| v.to_string())
+    }
+
+    #[test]
+    fn setup_is_unfinished_when_the_shell_has_no_line_and_nothing_says_otherwise() {
+        let dir = scratch("unfinished");
+        let home = dir.join("home");
+        std::fs::create_dir_all(&home).unwrap();
+        let h = home.to_str().unwrap().to_string();
+        let state = dir.join("state");
+        let env = |shell: &str| env_for(&h, shell);
+        // no startup file yet: the one setup would create is named
+        assert_eq!(unfinished(&env("/bin/zsh"), Some(&state)), Some(home.join(".zshrc")));
+        assert_eq!(unfinished(&env("/usr/bin/fish"), Some(&state)), Some(home.join(".config/fish/config.fish")));
+        // a file that has other things but no line
+        std::fs::write(home.join(".bashrc"), "export A=1\n").unwrap();
+        assert_eq!(unfinished(&env("/bin/bash"), Some(&state)), Some(home.join(".bashrc")));
+        // the line is there (however it was put there)
+        std::fs::write(home.join(".bashrc"), "eval \"$(imux init bash)\"\n").unwrap();
+        assert_eq!(unfinished(&env("/bin/bash"), Some(&state)), None);
+        // a shell imux init has no line for, and no shell at all
+        assert_eq!(unfinished(&env("/bin/sh"), Some(&state)), None);
+        assert_eq!(unfinished(&env("/usr/bin/nu"), Some(&state)), None);
+        assert_eq!(unfinished(&env_of(&[("HOME", h_str(&home))]), Some(&state)), None, "no SHELL");
+        assert_eq!(unfinished(&env_of(&[("SHELL", "/bin/zsh")]), Some(&state)), None, "no HOME");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn h_str(p: &Path) -> &str {
+        // the tests' scratch paths are plain UTF-8
+        Box::leak(p.to_str().unwrap().to_string().into_boxed_str())
+    }
+
+    #[test]
+    fn the_reminder_is_off_after_setup_ran_with_the_variable_and_for_a_file_setup_would_not_touch() {
+        let dir = scratch("quiet");
+        let home = dir.join("home");
+        std::fs::create_dir_all(&home).unwrap();
+        let state = dir.join("state");
+        let h = home.to_str().unwrap().to_string();
+        let base = |extra: Option<(&'static str, &'static str)>| {
+            let h = h.clone();
+            move |k: &str| match (k, extra) {
+                ("HOME", _) => Some(h.clone()),
+                ("SHELL", _) => Some("/bin/zsh".to_string()),
+                (name, Some((n, v))) if name == n => Some(v.to_string()),
+                _ => None,
+            }
+        };
+        assert!(unfinished(&base(None), Some(&state)).is_some());
+        for off in ["1", "yes", "true"] {
+            assert_eq!(unfinished(&base(Some(("IMUX_NO_SETUP_HINT", off))), Some(&state)), None, "{off}");
+        }
+        for on in ["", "0"] {
+            assert!(unfinished(&base(Some(("IMUX_NO_SETUP_HINT", on))), Some(&state)).is_some(), "{on:?} does not turn it off");
+        }
+        mark_done(&state);
+        assert!(state.join(DONE_MARKER).exists());
+        assert_eq!(unfinished(&base(None), Some(&state)), None, "setup has run");
+        std::fs::remove_file(state.join(DONE_MARKER)).unwrap();
+        // a symlinked startup file and a directory in its place are left alone by setup, so no reminder
+        std::fs::write(home.join("dot-zshrc"), "# mine\n").unwrap();
+        std::os::unix::fs::symlink(home.join("dot-zshrc"), home.join(".zshrc")).unwrap();
+        assert_eq!(unfinished(&base(None), Some(&state)), None);
+        std::fs::remove_file(home.join(".zshrc")).unwrap();
+        std::fs::create_dir(home.join(".zshrc")).unwrap();
+        assert_eq!(unfinished(&base(None), Some(&state)), None);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_reminder_is_kept_by_version_and_paths_are_shown_under_home() {
+        let dir = scratch("seen");
+        let state = dir.join("state");
+        assert!(!seen_by_this_version(&state), "nothing yet");
+        mark_seen(&state);
+        assert!(seen_by_this_version(&state));
+        std::fs::write(state.join(SEEN_MARKER), "0.0.1\n").unwrap();
+        assert!(!seen_by_this_version(&state), "an older version's mark does not count");
+        assert_eq!(shown_path(Path::new("/home/me/.zshrc"), Some("/home/me")), "~/.zshrc");
+        assert_eq!(shown_path(Path::new("/etc/zshrc"), Some("/home/me")), "/etc/zshrc");
+        assert_eq!(shown_path(Path::new("/home/me/.zshrc"), None), "/home/me/.zshrc");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn doctor_says_which_of_the_three_it_is() {
+        let dir = scratch("doctor");
+        let home = dir.join("home");
+        std::fs::create_dir_all(&home).unwrap();
+        let state = dir.join("state");
+        let h = home.to_str().unwrap().to_string();
+        let env = |shell: &str| env_for(&h, shell);
+        let (key, text) = doctor_line(&env("/bin/zsh"), Some(&state));
+        assert_eq!(key, "setup");
+        assert!(text.starts_with("not finished: ~/.zshrc has no imux init line"), "{text}");
+        std::fs::write(home.join(".zshrc"), "eval \"$(imux init zsh)\"\n").unwrap();
+        assert_eq!(doctor_line(&env("/bin/zsh"), Some(&state)).1, "the shell line is in ~/.zshrc");
+        assert!(doctor_line(&env("/bin/sh"), Some(&state)).1.contains("no line for your shell"));
+        mark_done(&state);
+        assert_eq!(doctor_line(&env("/bin/zsh"), Some(&state)).1, "imux setup has been run");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -1170,6 +1170,37 @@ This and
 are the only imux commands that write outside its own state directory, and
 .B setup
 does so only when you run it.
+A run of
+.B setup
+also writes the file
+.I setup\-done
+in the state directory, with the version that ran it, whichever parts were asked for.
+.PP
+Until
+.B setup
+has run, and when the startup file of your shell (zsh, bash, or fish) has no
+.B imux init
+line, imux reminds you: a box over the panes names the command and the file, and closes with
+Escape or
+.BR q ;
+a version of imux shows it once (it writes the version to
+.I setup\-hint\-seen
+in the state directory); and when a client detaches, one line says that setup is not finished.
+Nothing is shown when the line is there, when
+.B setup
+has run (with
+.B \-\-no\-shell
+too), when the shell is one that
+.B imux init
+has no line for, when the startup file is a symlink or not a regular file (setup leaves those
+alone), or when
+.B IMUX_NO_SETUP_HINT
+is set to anything but empty or 0.
+.B imux doctor
+has a
+.B setup
+line that says which of these it is.
+.PP
 If
 .B man imux
 does not find the page, add the
@@ -1204,10 +1235,12 @@ speaks the same protocol version as this imux (a
 line; a difference, or a server too old to say, is reported as a
 .BR PROBLEM );
 .IP \(bu 2
-the installed plugins, the four agent glyphs, and whether the agent skill is installed and the same
+the installed plugins, the four agent glyphs, whether the agent skill is installed and the same
 as this imux's copy (a
 .B skill
-line).
+line), and whether setup is finished (a
+.B setup
+line: the shell line is in your startup file, setup has run, or neither).
 .RE
 .IP
 A line starting with
@@ -5682,6 +5715,11 @@ and
 .B IMUX_SOCKET_NAME
 The name of the server to use (see
 .BR SYNOPSIS ).
+.TP
+.B IMUX_NO_SETUP_HINT
+Set to anything but empty or 0 to turn off the reminder that
+.B imux setup
+has not been run (the box when a client attaches and the line when it detaches).
 .TP
 .B IMUX_ALLOW_NESTED
 Set to 1 to let

@@ -400,7 +400,12 @@ fn run(args: &[String]) -> Result<i32, Failure> {
                     None => {}
                 }
             }
-            print_to_stdout(&imux::setup::run(&plan)?)
+            let report = imux::setup::run(&plan)?;
+            // setup has run: the reminder that it has not is over, whichever parts were asked for
+            if let Ok(dir) = imux::persist::state_dir(|k| std::env::var_os(k)) {
+                imux::setup::mark_done(&dir);
+            }
+            print_to_stdout(&report)
         }
         Some(("doctor", _)) => Ok(client::doctor()?),
         Some(("check-config", m)) => Ok(client::check_config(&cli::check_config_words(m))?),

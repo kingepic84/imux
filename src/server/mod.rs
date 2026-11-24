@@ -48,6 +48,7 @@ pub fn check_event_types(types: &[String]) -> Result<(), String> {
 }
 mod restore;
 mod saving;
+mod setuphint;
 mod search;
 mod segments;
 mod shellcmd;
@@ -930,6 +931,7 @@ impl Server {
                             };
                             self.show_message(id, text);
                         }
+                        self.setup_reminder(id);
                     }
                     Err(msg) => {
                         log::error(&format!("client {id}: {msg}"));

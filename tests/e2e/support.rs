@@ -60,6 +60,9 @@ impl Env {
         e.set("IMUX_STATE_DIR", dir.join("state").to_str().unwrap());
         e.set("IMUX_CONFIG", "/dev/null");
         e.set("SHELL", "/bin/sh");
+        // The reminder that `imux setup` has not been run is a box that takes the keys of a client:
+        // off for every test (q_setuphint turns it on), whatever shell and home the machine has.
+        e.set("IMUX_NO_SETUP_HINT", "1");
         // the tests were written for a terminal with 24-bit color (set here for every test)
         e.set("COLORTERM", "truecolor");
         e.set("BIN", BIN);

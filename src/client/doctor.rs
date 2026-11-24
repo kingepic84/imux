@@ -550,6 +550,8 @@ pub fn run() -> io::Result<i32> {
         lines.push(("nested attach".to_string(), text.to_string()));
     }
     lines.push(crate::skill::doctor());
+    let state = crate::persist::state_dir(|k| std::env::var_os(k)).ok();
+    lines.push(crate::setup::doctor_line(&|k| std::env::var(k).ok(), state.as_deref()));
     let mut stdout = io::stdout().lock();
     for (key, value) in lines {
         writeln!(stdout, "{key}: {value}").map_err(|e| crate::tty::ctx(e, "write the report"))?;

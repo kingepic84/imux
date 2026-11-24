@@ -507,6 +507,13 @@ fn run_as(mode: Mode, want: Option<Want>, read_only: bool) -> io::Result<i32> {
         Outcome::Exited(code) => code,
         Outcome::Detached => {
             let _ = writeln!(out, "[detached]");
+            // The terminal is back to normal, so this stays on the screen: a person who closed the
+            // reminder box without running setup is told once more, in one line.
+            let env = |k: &str| std::env::var(k).ok();
+            let state = crate::persist::state_dir(|k| std::env::var_os(k)).ok();
+            if let Some(rc) = crate::setup::unfinished(&env, state.as_deref()) {
+                let _ = writeln!(out, "imux: setup is not finished ({} has no imux init line): run `imux setup` once", crate::setup::shown_path(&rc, env("HOME").as_deref()));
+            }
             0
         }
         Outcome::ServerGone => {

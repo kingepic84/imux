@@ -77,6 +77,7 @@ mod q_restoreresume;
 mod q_borderlines;
 mod q_agentstart;
 mod q_startname;
+mod q_setuphint;
 mod q_agentsession;
 mod s_spawnlinks;
 mod q_spawnrestore;
