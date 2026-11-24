@@ -19,7 +19,7 @@ impl Server {
         capture::snapshot(
             &self.sessions,
             self.recent,
-            &capture::Capture { claude: &claude, keep: &commands, shell: &self.shell(), kept: &self.kept_dirs, names: &self.pending_names },
+            &capture::Capture { claude: &claude, keep: &commands, shell: &self.shell(), kept: &self.kept_dirs, names: &self.pending_names, spawned: &self.spawned_by },
         )
     }
 

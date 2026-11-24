@@ -1,8 +1,10 @@
 //! Who made a pane, and what a program in a pane may do because of it (P10.1).
 //!
-//! A pane the user made (key, prompt, configuration, wizard, restore) has no record. A pane a
+//! A pane the user made (key, prompt, configuration, wizard) has no record. A pane a
 //! program in another pane asked for over the socket (`split-window`, `new-window`) records that
 //! pane as its maker, taken from the peer of the connection, never from anything a pane printed.
+//! A restore numbers the panes anew and gives back the makers that the snapshot holds, by position
+//! (`capture::SPAWN_KEY`, `restore::relink_spawned`), so a program keeps its panes through a restart.
 //! The records form a tree; `command-from-panes` says what a program in a user-made pane may do:
 //!
 //! - `off`: look only (the lists, `display-message`, its own pane's text, `wait-for`).
@@ -26,7 +28,7 @@ use crate::session::layout::PaneId;
 use crate::target::Kind;
 
 /// A chain of makers is never longer than this, whatever the option says.
-const CHAIN_MAX: usize = 64;
+pub(super) const CHAIN_MAX: usize = 64;
 
 /// What a program that talks to the socket from a pane may do.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

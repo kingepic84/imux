@@ -23,6 +23,9 @@ pub struct Capture<'a> {
     /// directory and the home directory the pane started in. While such a pane is still in that
     /// home directory, the snapshot keeps the saved path.
     pub kept: &'a std::collections::HashMap<crate::session::layout::PaneId, (String, String)>,
+    /// Which pane made which (`spawned_by`): written down by position, so that a restore can give
+    /// the new panes the same makers.
+    pub spawned: &'a std::collections::HashMap<crate::session::layout::PaneId, crate::session::layout::PaneId>,
     /// The agent names of restored panes whose program has not reported yet.
     pub names: &'a std::collections::HashMap<crate::session::layout::PaneId, String>,
 }
@@ -61,8 +64,44 @@ pub fn current_dir(p: &Pane, shell: &str) -> String {
 pub fn snapshot(sessions: &[Session], recent_id: usize, cap: &Capture) -> Snapshot {
     let saved_at = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
     let recent = sessions.iter().position(|s| s.id == recent_id).unwrap_or(0);
-    let sessions = sessions.iter().map(|s| session(s, cap)).collect();
-    Snapshot { saved_at, recent, sessions }
+    let mut saved: Vec<SSession> = sessions.iter().map(|s| session(s, cap)).collect();
+    write_spawn_links(sessions, &mut saved, cap);
+    Snapshot { saved_at, recent, sessions: saved }
+}
+
+/// The window meta key that holds who made the panes of a window: `leaf:session.window.leaf`, comma
+/// separated, for each pane (by its position in its window) that another pane made (by the
+/// position of that pane). Positions are those of the snapshot, so they mean the same after a
+/// restore, where the pane numbers do not.
+pub const SPAWN_KEY: &str = "imux.spawn";
+
+/// Most meta lines of a window a snapshot is read with (`persist::format`), and a margin.
+const META_ROOM: usize = 60;
+
+fn write_spawn_links(sessions: &[Session], saved: &mut [SSession], cap: &Capture) {
+    use std::collections::HashMap;
+    if cap.spawned.is_empty() {
+        return;
+    }
+    let mut at: HashMap<crate::session::layout::PaneId, (usize, usize, usize)> = HashMap::new();
+    for (si, s) in sessions.iter().enumerate() {
+        for (wi, w) in s.windows.iter().enumerate() {
+            for (leaf, id) in w.layout.panes().into_iter().enumerate() {
+                at.insert(id, (si, wi, leaf));
+            }
+        }
+    }
+    for (child, maker) in cap.spawned {
+        let (Some(&(cs, cw, cl)), Some(&(ms, mw, ml))) = (at.get(child), at.get(maker)) else { continue };
+        let meta = &mut saved[cs].windows[cw].meta;
+        let entry = format!("{cl}:{ms}.{mw}.{ml}");
+        if let Some((_, v)) = meta.iter_mut().find(|(k, _)| k == SPAWN_KEY) {
+            v.push(',');
+            v.push_str(&entry);
+        } else if meta.len() < META_ROOM {
+            meta.push((SPAWN_KEY.to_string(), entry));
+        }
+    }
 }
 
 fn session(s: &Session, cap: &Capture) -> SSession {

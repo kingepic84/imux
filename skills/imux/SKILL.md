@@ -37,6 +37,10 @@ imux agent get reviewer
 imux capture-pane -p -t agent:reviewer
 ```
 
+After a restart and a restore the pane numbers are new, but the panes you spawned are still yours
+and names are kept: take your panes by name, and list them again (`imux agent list`) before you
+use a number you remember.
+
 ## Open a sibling pane
 
 A pane you open must not take the user's focus, and it starts in your directory. Pick the split

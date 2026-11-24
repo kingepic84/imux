@@ -125,7 +125,9 @@ fn missing_dir(saved: &str) -> Option<(String, String)> {
 
 pub fn spec_of(w: &SWindow, rules: &Rules) -> WindowSpec {
     let tree = w.tree.clone().map(&mut |p: SPane| PaneSpec { run: run_command(&p, rules), name: p.name.clone(), cwd: p.cwd });
-    WindowSpec { name: w.name.clone(), auto_rename: w.auto_rename, tree, active_leaf: w.active_leaf, meta: w.meta.clone() }
+    // The links of spawned panes are read by `relink_spawned`, and are no window values.
+    let meta = w.meta.iter().filter(|(k, _)| k != super::capture::SPAWN_KEY).cloned().collect();
+    WindowSpec { name: w.name.clone(), auto_rename: w.auto_rename, tree, active_leaf: w.active_leaf, meta }
 }
 
 impl Server {
@@ -253,6 +255,8 @@ impl Server {
         let rules = self.restore_rules();
         let (mut restored, mut skipped) = (0, 0);
         let mut recent = None;
+        // The panes of every window that came back, in layout order, by their place in the snapshot.
+        let mut placed: std::collections::HashMap<(usize, usize), Vec<PaneId>> = std::collections::HashMap::new();
         for (i, saved) in snap.sessions.iter().enumerate() {
             // A session of that name that nobody has used (the empty one a new server starts with)
             // gives way to the saved one; one that has been used is left alone.
@@ -277,6 +281,7 @@ impl Server {
                         if wi == saved.current {
                             current = Some(windows.len());
                         }
+                        placed.insert((i, wi), win.layout.panes());
                         windows.push(win);
                     }
                     Err(e) => log::error(&format!("restore: window {:?} of {:?}: {e}", w.name, saved.name)),
@@ -311,8 +316,42 @@ impl Server {
         if let Some(first) = self.sessions.first() {
             self.recent = recent.unwrap_or(first.id);
         }
+        self.relink_spawned(snap, &placed);
         self.relayout();
         (restored, skipped)
+    }
+
+    /// Give the restored panes the makers they had: a program that spawned panes can act on them
+    /// again after a restore, which numbers the panes anew. The links come from the snapshot (written
+    /// by `capture`), by position; one that points at a pane that did not come back, at itself, or
+    /// round a circle is dropped. The pane numbers are not trusted for anything: only places.
+    fn relink_spawned(&mut self, snap: &Snapshot, placed: &std::collections::HashMap<(usize, usize), Vec<PaneId>>) {
+        let mut linked = 0;
+        for (&(si, wi), panes) in placed {
+            let Some(value) = snap.sessions.get(si).and_then(|s| s.windows.get(wi)).and_then(|w| w.meta.iter().find(|(k, _)| k == super::capture::SPAWN_KEY)) else { continue };
+            for entry in value.1.split(',').take(super::spawned::CHAIN_MAX * 4) {
+                let Some((leaf, maker)) = entry.split_once(':') else { continue };
+                let mut at = maker.split('.');
+                let (Ok(leaf), Some(Ok(ms)), Some(Ok(mw)), Some(Ok(ml))) = (
+                    leaf.parse::<usize>(),
+                    at.next().map(str::parse::<usize>),
+                    at.next().map(str::parse::<usize>),
+                    at.next().map(str::parse::<usize>),
+                ) else {
+                    continue;
+                };
+                let (Some(&child), Some(&maker)) = (panes.get(leaf), placed.get(&(ms, mw)).and_then(|p| p.get(ml))) else { continue };
+                // never a pane its own maker, never a circle
+                if child == maker || self.maker_chain(maker).contains(&child) {
+                    continue;
+                }
+                self.spawned_by.insert(child, maker);
+                linked += 1;
+            }
+        }
+        if linked > 0 {
+            log::info(&format!("restore: {linked} pane{} got back the pane that made {}", if linked == 1 { "" } else { "s" }, if linked == 1 { "it" } else { "them" }));
+        }
     }
 
     /// On the first client: bring back the last autosave when `restore-on-start` is on.

@@ -896,6 +896,11 @@ Every command the socket allows, except those that run shell text.
 .PP
 imux records, from the process that sent the command, which pane made each pane the program in
 another pane asked for (\fB#{pane_spawned_by}\fP is its id, empty for a pane you made).
+A snapshot keeps these records, by the position of the panes, and a restore gives them back to the
+restored panes, which have new numbers: a program that spawned panes can still act on them after
+the server was restarted and the sessions restored.
+A link that points at a pane that did not come back, at the pane itself, or round a circle is
+dropped.
 A program in a spawned pane is always held to the panes it spawned itself, whatever the option
 says, and to looking while the option is
 .BR off :
