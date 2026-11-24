@@ -77,6 +77,7 @@ mod q_restoreresume;
 mod q_borderlines;
 mod q_agentstart;
 mod q_startname;
+mod q_restoreempty;
 mod q_panewait;
 mod q_panerun;
 mod q_spawned;

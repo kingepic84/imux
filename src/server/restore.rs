@@ -221,6 +221,32 @@ impl Server {
             .min()
     }
 
+    /// Why a session has been used, or `None` for one nobody has: one window with one pane that is
+    /// a plain shell in front, nothing typed into it by a person or a script, no agent, no copy
+    /// mode and nothing waiting to be typed. This is what a new server starts with, and a restore
+    /// may replace it. What the shell printed on its own (a greeting, a long prompt) does not make
+    /// it used, and a command run in it does.
+    fn why_session_is_used(&self, session: &Session) -> Option<&'static str> {
+        let [window] = &session.windows[..] else { return Some("it has more than one window") };
+        let mut panes = window.panes.values();
+        let (Some(pane), None) = (panes.next(), panes.next()) else { return Some("its window has more than one pane") };
+        if pane.dead.is_some() {
+            Some("its pane has ended")
+        } else if pane.agent.is_some() {
+            Some("an agent reported in its pane")
+        } else if pane.start.is_some() {
+            Some("its pane runs a command, not a plain shell")
+        } else if pane.copy.is_some() || pane.typeahead.is_some() {
+            Some("its pane is in use")
+        } else if pane.pty.was_typed_into() {
+            Some("something was typed into its pane")
+        } else if !super::capture::shell_is_foreground(pane, &self.shell()) {
+            Some("a program runs in its pane")
+        } else {
+            None
+        }
+    }
+
     /// Recreate the sessions of `snap`; returns how many came back and how many were left out
     /// because a session of that name already runs. Failures are per window.
     pub(super) fn restore(&mut self, snap: &Snapshot) -> (usize, usize) {
@@ -228,10 +254,20 @@ impl Server {
         let (mut restored, mut skipped) = (0, 0);
         let mut recent = None;
         for (i, saved) in snap.sessions.iter().enumerate() {
-            if !saved.name.is_empty() && self.sessions.iter().any(|s| s.name == saved.name) {
-                log::info(&format!("restore: session {:?} already exists, left alone", saved.name));
-                skipped += 1;
-                continue;
+            // A session of that name that nobody has used (the empty one a new server starts with)
+            // gives way to the saved one; one that has been used is left alone.
+            let mut replaces = None;
+            if !saved.name.is_empty()
+                && let Some(old) = self.sessions.iter().find(|s| s.name == saved.name)
+            {
+                match self.why_session_is_used(old) {
+                    None => replaces = Some(old.id),
+                    Some(why) => {
+                        log::info(&format!("restore: session {:?} already exists, left alone: {why}", saved.name));
+                        skipped += 1;
+                        continue;
+                    }
+                }
             }
             let mut windows = Vec::new();
             let mut current = None;
@@ -256,6 +292,17 @@ impl Server {
             session.current = current.unwrap_or(0);
             log::info(&format!("session {sid} ({}) restored with {} windows", session.name, session.windows.len()));
             self.sessions.push(session);
+            if let Some(old) = replaces {
+                // the clients looking at the empty session follow to the saved one, then it goes
+                let looking: Vec<usize> = self.clients.iter().filter(|(_, c)| c.session == old).map(|(id, _)| *id).collect();
+                for client in looking {
+                    self.attach(client, sid);
+                }
+                if let Some(si) = self.sessions.iter().position(|s| s.id == old) {
+                    self.kill_session(si);
+                }
+                log::info(&format!("restore: the untouched session {:?} gave way to the saved one", self.sessions.iter().find(|s| s.id == sid).map_or("", |s| s.name.as_str())));
+            }
             if i == snap.recent {
                 recent = Some(sid);
             }

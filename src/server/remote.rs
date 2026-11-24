@@ -1218,10 +1218,10 @@ impl Server {
         if pane.dead.is_some() {
             return Err("send-keys: the pane is dead (respawn-pane starts it again)".to_string());
         }
-        pane.pty.write(&bytes).map_err(|e| format!("send-keys: {e}"))?;
+        pane.pty.write_typed(&bytes).map_err(|e| format!("send-keys: {e}"))?;
         for id in self.typing_targets(place.si, place.wi, place.pane).into_iter().skip(1) {
             let Some(other) = win.panes.get(&id) else { continue };
-            if let Err(e) = other.pty.write(&encode(other.term.grid.modes.cursor_keys)) {
+            if let Err(e) = other.pty.write_typed(&encode(other.term.grid.modes.cursor_keys)) {
                 log::warn(&format!("send-keys to a synchronized pane: {e}"));
             }
         }

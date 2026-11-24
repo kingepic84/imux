@@ -119,7 +119,7 @@ impl Server {
             line.push(' ');
             line.push_str(q);
         }
-        pane.pty.write(format!("{line}\r").as_bytes()).map_err(|e| format!("agent start: {e}"))?;
+        pane.pty.write_typed(format!("{line}\r").as_bytes()).map_err(|e| format!("agent start: {e}"))?;
         log::info(&format!("agent start: {name} ({}) typed into pane {id}", if kind.is_empty() { "worktree-command" } else { kind }));
         self.pending_names.insert(id, name.clone());
         self.started_names.insert(id);

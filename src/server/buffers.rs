@@ -113,7 +113,7 @@ impl Server {
             if bracketed {
                 bytes.extend_from_slice(b"\x1b[201~");
             }
-            if let Err(e) = pane.pty.write(&bytes) {
+            if let Err(e) = pane.pty.write_typed(&bytes) {
                 log::warn(&format!("paste to pty: {e}"));
             }
         }

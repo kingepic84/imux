@@ -22,6 +22,8 @@ pub struct Pty {
     pub child: Pid,
     /// Set when the program stopped reading its input: writes are refused until then.
     stalled_until: Cell<Option<Instant>>,
+    /// Something was typed into the pane (`write_typed`).
+    typed: Cell<bool>,
 }
 
 impl Pty {
@@ -65,6 +67,20 @@ impl Pty {
             }
             other => other,
         }
+    }
+
+    /// Send what a person or a script typed (keys, a paste, `send-keys`, `pane run`, a prompt for
+    /// an agent) and remember that the pane has been typed into. What the server itself writes
+    /// (answers to the program's queries, focus reports, the command a restore types) goes through
+    /// `write` and does not count.
+    pub fn write_typed(&self, bytes: &[u8]) -> io::Result<()> {
+        self.typed.set(true);
+        self.write(bytes)
+    }
+
+    /// Whether anything was typed into the pane since it started.
+    pub fn was_typed_into(&self) -> bool {
+        self.typed.get()
     }
 }
 
@@ -163,7 +179,7 @@ pub fn spawn_command(
         ForkptyResult::Parent { child, master } => {
             set_cloexec(master.as_fd())?;
             set_nonblocking(master.as_fd())?;
-            Ok(Pty { master, child, stalled_until: Cell::new(None) })
+            Ok(Pty { master, child, stalled_until: Cell::new(None), typed: Cell::new(false) })
         }
     }
 }

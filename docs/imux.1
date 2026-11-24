@@ -2722,7 +2722,8 @@ after the prefix run
 and
 .B restore\-session resurrect
 and show the answer in the status line; each save replaces the last, and a session that is already
-running is left alone when it is restored.
+running is left alone when it is restored, unless nobody has used it (a new server's empty
+session gives way to the saved one of the same name).
 Other keys, other names or none at all are a matter for
 .B bind
 and
@@ -2743,7 +2744,10 @@ at most 64, not starting with a dot.
 .TP
 .BR restore\-session " [\fIname\fP], " "imux restore" " [\fIname\fP]"
 Add the sessions of a named snapshot, or of the autosave, to the running server.
-A session whose name is in use is left alone and counted in the reply.
+A session whose name is in use is left alone and counted in the reply, unless the running one is
+untouched (one window with one pane, a shell in front, nothing typed into it by a person or a
+script and no agent, which is what a new server starts with; what the shell printed by itself does
+not count): the saved session takes its place, and the clients in it move to the saved one.
 A client must have attached once, since the pane size comes from it.
 .TP
 .BR list\-snapshots ", " "imux snapshots"

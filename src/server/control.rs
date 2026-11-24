@@ -365,7 +365,7 @@ impl Server {
         let Some(pane) = self.pane_by_id(args.pane) else { return self.finish_request(client, Err(tag("not_found", &format!("no pane {}", args.pane)))) };
         let app = pane.agent.as_ref().and_then(|r| r.app.clone());
         let working = pane.agent.as_ref().is_some_and(|r| r.state == State::Working);
-        if let Err(e) = pane.pty.write(&bytes) {
+        if let Err(e) = pane.pty.write_typed(&bytes) {
             return self.finish_request(client, Err(format!("agent prompt: {e}")));
         }
         let sent = Instant::now();
@@ -404,7 +404,7 @@ impl Server {
             }
         }
         let bytes = prompt_payload(text, found.term.grid.modes.bracketed_paste).map_err(|e| tag("invalid_argument", &e))?;
-        found.pty.write(&bytes).map_err(|e| format!("pane run: {e}"))?;
+        found.pty.write_typed(&bytes).map_err(|e| format!("pane run: {e}"))?;
         log::info(&format!("pane run: {} bytes typed into pane {id}", text.len()));
         Ok("sent\n".to_string())
     }

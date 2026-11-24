@@ -1395,7 +1395,7 @@ impl Server {
         }
         for id in self.typing_targets(si, wi, win.active) {
             if let Some(pane) = win.panes.get(&id).filter(|p| !p.input_off)
-                && let Err(e) = pane.pty.write(bytes)
+                && let Err(e) = pane.pty.write_typed(bytes)
             {
                 log::warn(&format!("write to pty: {e}"));
             }

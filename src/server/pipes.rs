@@ -238,7 +238,7 @@ impl Server {
             let gone = p.exited() && p.pending.is_empty() && p.stdout.is_none();
             if !typed.is_empty()
                 && let Some(pane) = self.pane_mut(id)
-                && let Err(e) = pane.pty.write(&typed)
+                && let Err(e) = pane.pty.write_typed(&typed)
             {
                 log::warn(&format!("pane {id}: typing the output of the pipe: {e}"));
             }
