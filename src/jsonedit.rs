@@ -339,9 +339,7 @@ pub fn append_element(text: &str, container: (usize, usize), spans: &[(usize, us
     let base = indent_at(text, container.0);
     let step = step_of(text);
     match spans.last() {
-        Some(&(first_start, _)) if spans.len() > 1 || true => {
-            let (_, last_end) = *spans.last().unwrap();
-            let _ = first_start;
+        Some(&(_, last_end)) => {
             let multiline = text[container.0..spans[0].0].contains('\n');
             if multiline {
                 let child = indent_at(text, spans[0].0);
