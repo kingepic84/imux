@@ -36,6 +36,9 @@ fn f_events() {
     let mut some = follow(&e, &["events", "--types", "window-renamed,after-new-window"], "some.out");
     let mut agentev = follow(&e, &["events", "--types", "agent-state-changed"], "agent.out");
     t.ok("a subscription starts with a hello line", wait(10, &|| e.read("all.out").contains("subscribed")) && e.read("all.out").contains("\"api\":1"));
+    // every reader has to be connected before anything happens, or a late one misses the event it is
+    // asked about (on a busy machine the second and third connect after the first)
+    t.ok("the other subscriptions are connected too", wait(10, &|| e.read("some.out").contains("subscribed") && e.read("agent.out").contains("subscribed")));
     e.run(&["rename-window", "-t", "a:0", "named \"one\""]);
     e.run(&["new-window", "-d", "-t", "a", "-n", "second"]);
     t.ok(
