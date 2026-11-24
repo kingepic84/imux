@@ -125,6 +125,7 @@ mod q_restoredir;
 mod q_sendkeysfh;
 mod q_setup_brew;
 mod q_semver;
+mod q_surface;
 mod q_setup;
 mod q_skill;
 mod q_sourcefile;
