@@ -1,6 +1,11 @@
-//! `imux setup`: put the manual and the agent skill where they are read, if they are not there yet.
+//! `imux setup`: put the manual, the agent skill, and the Claude Code hook where they are read, if
+//! they are not there yet.
 //!
-//! Both texts are built into the binary, so what gets installed is the copy that matches this imux.
+//! The texts are built into the binary, so what gets installed is the copy that matches this imux.
+//! The hook is a script (`examples/claude-hook.sh`) in Claude Code's directory plus the entries
+//! that call it in Claude Code's `settings.json`. imux writes that file only when it is not there:
+//! it has no business rewriting a file that holds a person's own settings, so an existing one is
+//! left as it is and the entries to add are printed.
 //! This is the only place imux writes outside its own state directory, and only when the user runs
 //! the command. A file that is a symlink is left alone (a dotfiles manager owns it), one that
 //! differs from this imux's copy is brought up to date, and one that is the same is not touched.
@@ -12,6 +17,20 @@ use std::path::{Path, PathBuf};
 
 /// The manual, as shipped (`docs/imux.1`).
 pub const MAN: &str = include_str!("../docs/imux.1");
+
+/// The Claude Code hook script, as shipped (`examples/claude-hook.sh`).
+pub const CLAUDE_HOOK: &str = include_str!("../examples/claude-hook.sh");
+
+/// What the hook script is called in Claude Code's directory.
+pub const CLAUDE_HOOK_NAME: &str = "imux-claude-hook.sh";
+
+/// Claude Code's directory (`~/.claude`), where the hook script and `settings.json` go, and the
+/// home directory (to write paths as `~/...` in the settings).
+#[derive(Debug, Clone)]
+pub struct ClaudeHooks {
+    pub dir: PathBuf,
+    pub home: Option<PathBuf>,
+}
 
 /// The shells `imux init` can print a line for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -85,6 +104,7 @@ pub struct Plan {
     /// there yet, the manpage step then does nothing and says nothing.
     pub man_present: Option<PathBuf>,
     pub skill: Option<PathBuf>,
+    pub claude: Option<ClaudeHooks>,
     pub shell: Option<ShellRc>,
     /// The user's shell, when `imux init` has no line for it: said in the report, nothing added.
     pub unsupported_shell: Option<String>,
@@ -188,6 +208,87 @@ pub fn put(path: &Path, text: &str) -> io::Result<Outcome> {
     Ok(if was.is_some() { Outcome::Updated } else { Outcome::Installed })
 }
 
+/// How the settings name the script: `~/.claude/imux-claude-hook.sh` when it is under the home
+/// directory, else the whole path; quoted for the shell when it needs it.
+fn script_reference(script: &Path, home: Option<&Path>) -> String {
+    let text = match home.and_then(|h| script.strip_prefix(h).ok()) {
+        Some(rest) => format!("~/{}", rest.display()),
+        None => script.display().to_string(),
+    };
+    if text.chars().all(|c| c.is_ascii_alphanumeric() || "/._~-".contains(c)) { text } else { format!("\"{}\"", text.replace('"', "\\\"")) }
+}
+
+fn json_string(text: &str) -> String {
+    let mut out = String::from("\"");
+    for c in text.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
+/// The `settings.json` that lists the hook: the name on every prompt and at the start of a
+/// session, and the way back at the start of a session.
+pub fn claude_settings(script: &Path, home: Option<&Path>) -> String {
+    let reference = script_reference(script, home);
+    let entry = |what: &str| format!("{{ \"type\": \"command\", \"command\": {} }}", json_string(&format!("sh {reference} {what}")));
+    format!(
+        "{{\n  \"hooks\": {{\n    \"SessionStart\": [\n      {{ \"hooks\": [\n        {},\n        {}\n      ] }}\n    ],\n    \"UserPromptSubmit\": [\n      {{ \"hooks\": [{}] }}\n    ]\n  }}\n}}\n",
+        entry("session"),
+        entry("resume"),
+        entry("session")
+    )
+}
+
+/// Install the Claude Code hook: the script (kept up to date like the skill) and, when
+/// `settings.json` is not there, a `settings.json` that calls it. An existing one is never
+/// changed: it is said whether it lists the hook, and if it does not, what to add.
+fn install_claude(hooks: &ClaudeHooks) -> io::Result<String> {
+    let mut report = String::new();
+    let script = hooks.dir.join(CLAUDE_HOOK_NAME);
+    let outcome = put(&script, CLAUDE_HOOK).map_err(|e| io::Error::new(e.kind(), format!("{}: {e}", script.display())))?;
+    report.push_str(&line("claude hook", &script, &outcome));
+    if matches!(outcome, Outcome::Skipped(_)) {
+        return Ok(report);
+    }
+    let settings = hooks.dir.join("settings.json");
+    let wanted = claude_settings(&script, hooks.home.as_deref());
+    let existing = match std::fs::symlink_metadata(&settings) {
+        Ok(meta) if meta.file_type().is_symlink() => {
+            report.push_str(&format!("claude hook: left {} alone, it is a symlink; add the hooks to it yourself:\n{wanted}", settings.display()));
+            return Ok(report);
+        }
+        Ok(meta) if !meta.is_file() => {
+            report.push_str(&format!("claude hook: left {} alone, it is not a regular file\n", settings.display()));
+            return Ok(report);
+        }
+        Ok(_) => Some(std::fs::read_to_string(&settings).map_err(|e| io::Error::new(e.kind(), format!("{}: {e}", settings.display())))?),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => None,
+        Err(e) => return Err(io::Error::new(e.kind(), format!("{}: {e}", settings.display()))),
+    };
+    match existing {
+        None => {
+            put(&settings, &wanted).map_err(|e| io::Error::new(e.kind(), format!("{}: {e}", settings.display())))?;
+            report.push_str(&format!("claude hook: installed {} (it calls the script)\n", settings.display()));
+        }
+        Some(text) if text.contains(CLAUDE_HOOK_NAME) => {
+            report.push_str(&format!("claude hook: {} already calls the script\n", settings.display()));
+        }
+        Some(text) if text.contains("imux agent name") || text.contains("claude-hook") => {
+            report.push_str(&format!("claude hook: {} has hooks for imux of its own; replace them with the entries below to use the script:\n{wanted}", settings.display()));
+        }
+        Some(_) => {
+            report.push_str(&format!("claude hook: {} exists, and imux does not edit it; add these entries to its \"hooks\" (merge them into the lists you have):\n{wanted}", settings.display()));
+        }
+    }
+    Ok(report)
+}
+
 fn line(what: &str, path: &Path, outcome: &Outcome) -> String {
     match outcome {
         Outcome::Installed => format!("{what}: installed {}\n", path.display()),
@@ -215,6 +316,9 @@ pub fn run(plan: &Plan) -> io::Result<String> {
     if let Some(path) = &plan.skill {
         let outcome = put(path, crate::skill::TEXT).map_err(|e| io::Error::new(e.kind(), format!("{}: {e}", path.display())))?;
         report.push_str(&line("skill", path, &outcome));
+    }
+    if let Some(hooks) = &plan.claude {
+        report.push_str(&install_claude(hooks)?);
     }
     if let Some(name) = &plan.unsupported_shell {
         report.push_str(&format!("shell: nothing added: imux init has a line for zsh, bash and fish, not for {name}\n"));
@@ -440,5 +544,81 @@ mod tests {
         std::fs::write(&dest, "old").unwrap();
         assert!(run(&plan).unwrap().contains("manual: updated"));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn hooks_in(dir: &Path) -> Plan {
+        Plan { claude: Some(ClaudeHooks { dir: dir.join("home/.claude"), home: Some(dir.join("home")) }), ..Plan::default() }
+    }
+
+    #[test]
+    fn the_claude_hook_is_the_shipped_script_and_a_new_settings_file_calls_it() {
+        let on_disk = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/examples/claude-hook.sh")).unwrap();
+        assert_eq!(on_disk, CLAUDE_HOOK);
+        let dir = scratch("claude-new");
+        let report = run(&hooks_in(&dir)).unwrap();
+        let script = dir.join("home/.claude").join(CLAUDE_HOOK_NAME);
+        assert_eq!(std::fs::read_to_string(&script).unwrap(), CLAUDE_HOOK);
+        assert!(report.contains("claude hook: installed") && report.contains("settings.json (it calls the script)"), "{report}");
+        let settings = std::fs::read_to_string(dir.join("home/.claude/settings.json")).unwrap();
+        assert!(settings.contains("\"command\": \"sh ~/.claude/imux-claude-hook.sh session\""), "{settings}");
+        assert!(settings.contains("sh ~/.claude/imux-claude-hook.sh resume"), "{settings}");
+        assert!(settings.contains("\"SessionStart\"") && settings.contains("\"UserPromptSubmit\""), "{settings}");
+        // the second run changes nothing and says so
+        let again = run(&hooks_in(&dir)).unwrap();
+        assert!(again.contains("claude hook: already installed") && again.contains("already calls the script"), "{again}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_existing_settings_file_is_never_changed_and_the_entries_are_printed() {
+        let dir = scratch("claude-existing");
+        let claude = dir.join("home/.claude");
+        std::fs::create_dir_all(&claude).unwrap();
+        let mine = "{\n  \"permissions\": { \"allow\": [\"Bash(ls)\"] }\n}\n";
+        std::fs::write(claude.join("settings.json"), mine).unwrap();
+        let report = run(&hooks_in(&dir)).unwrap();
+        assert_eq!(std::fs::read_to_string(claude.join("settings.json")).unwrap(), mine, "not one byte of it changed");
+        assert!(report.contains("does not edit it") && report.contains("sh ~/.claude/imux-claude-hook.sh resume"), "{report}");
+        assert!(claude.join(CLAUDE_HOOK_NAME).exists(), "the script is installed anyway");
+        // a file that already lists the script, and one with hooks of imux's own from before
+        let listed = "{\"hooks\":{\"SessionStart\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"sh ~/.claude/imux-claude-hook.sh session\"}]}]}}";
+        std::fs::write(claude.join("settings.json"), listed).unwrap();
+        assert!(run(&hooks_in(&dir)).unwrap().contains("already calls the script"));
+        let old = "{\"hooks\":{\"SessionStart\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"imux agent name 1 x\"}]}]}}";
+        std::fs::write(claude.join("settings.json"), old).unwrap();
+        let report = run(&hooks_in(&dir)).unwrap();
+        assert!(report.contains("has hooks for imux of its own"), "{report}");
+        assert_eq!(std::fs::read_to_string(claude.join("settings.json")).unwrap(), old);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_symlinked_script_or_settings_file_is_left_alone() {
+        let dir = scratch("claude-links");
+        let claude = dir.join("home/.claude");
+        std::fs::create_dir_all(&claude).unwrap();
+        let theirs = dir.join("dotfiles-settings.json");
+        std::fs::write(&theirs, "{}").unwrap();
+        std::os::unix::fs::symlink(&theirs, claude.join("settings.json")).unwrap();
+        let report = run(&hooks_in(&dir)).unwrap();
+        assert_eq!(std::fs::read_to_string(&theirs).unwrap(), "{}");
+        assert!(report.contains("it is a symlink"), "{report}");
+        let other = dir.join("dotfiles-hook.sh");
+        std::fs::write(&other, "mine").unwrap();
+        std::fs::remove_file(claude.join(CLAUDE_HOOK_NAME)).unwrap();
+        std::os::unix::fs::symlink(&other, claude.join(CLAUDE_HOOK_NAME)).unwrap();
+        let report = run(&hooks_in(&dir)).unwrap();
+        assert_eq!(std::fs::read_to_string(&other).unwrap(), "mine");
+        assert!(report.contains("left") && report.contains("alone"), "{report}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_path_outside_home_or_with_a_space_is_written_so_the_shell_and_json_read_it() {
+        let script = Path::new("/opt/my claude/imux-claude-hook.sh");
+        let text = claude_settings(script, Some(Path::new("/home/me")));
+        assert!(text.contains("\"command\": \"sh \\\"/opt/my claude/imux-claude-hook.sh\\\" session\""), "{text}");
+        let under = claude_settings(Path::new("/home/me/.claude/imux-claude-hook.sh"), Some(Path::new("/home/me")));
+        assert!(under.contains("sh ~/.claude/imux-claude-hook.sh session"), "{under}");
     }
 }

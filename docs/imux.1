@@ -1087,10 +1087,10 @@ where your agent reads skills from, and run
 .B imux doctor
 to see whether the file at the default place is there and the same.
 .TP
-.B imux setup [\-\-man\-dir dir] [\-\-skill\-path file] [\-\-shell name] [\-\-no\-man] [\-\-no\-skill] [\-\-no\-shell]
-Install the manpage and the agent skill, and add one line to your shell startup file, unless they are
-already there.
-The manpage and the skill are built into this imux, so what is installed matches it.
+.B imux setup [\-\-man\-dir dir] [\-\-skill\-path file] [\-\-claude\-dir dir] [\-\-shell name] [\-\-no\-man] [\-\-no\-skill] [\-\-no\-claude\-hooks] [\-\-no\-shell]
+Install the manpage, the agent skill, and a hook for Claude Code, and add one line to your shell
+startup file, unless they are already there.
+The manpage, the skill, and the hook are built into this imux, so what is installed matches it.
 The manpage goes to
 .I dir/man1/imux.1
 (default
@@ -1109,6 +1109,31 @@ to install one anyway. The skill goes to
 (default: the place
 .B imux skill path
 prints).
+The hook is a script,
+.IR ~/.claude/imux\-claude\-hook.sh ,
+which Claude Code runs at the start of a session and on every prompt (a
+.B ~/.claude/settings.json
+that calls it is written when there is none).
+It tells imux the name of the Claude Code session in the pane
+.RB ( agent\ session ),
+so the agent panel shows it and an agent can read it (the name an agent was given with
+.B agent name
+is never changed by it), and at the start of a session it reports how to bring the conversation
+back
+.RB ( "claude \-\-resume" " and the session's id, see " "AGENT STATUS" ),
+so a restored pane continues its own conversation and not the latest one of the directory.
+It prints nothing, always succeeds, and does nothing outside imux.
+An existing
+.I settings.json
+is never changed: setup prints the entries to add to it, and says when it already lists the script
+(or has hooks of imux's own from before).
+.B \-\-claude\-dir
+names another directory than
+.IR ~/.claude ;
+.B \-\-no\-claude\-hooks
+leaves the hook out, and
+.B \-\-no\-skill
+leaves out the skill and the hook.
 The shell line is
 .B eval "$(imux init zsh)"
 (or

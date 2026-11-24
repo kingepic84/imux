@@ -376,6 +376,14 @@ fn run(args: &[String]) -> Result<i32, Failure> {
                     return Err(Failure::Io(std::io::Error::other("HOME is not set (or give --skill-path)")));
                 }
             }
+            // The hook is part of the Claude Code setup with the skill: `--no-skill` leaves both alone.
+            if !m.get_flag("no-claude-hooks") && !m.get_flag("no-skill") {
+                let dir = m.get_one::<String>("claude-dir").map(std::path::PathBuf::from).or_else(|| home.as_deref().filter(|h| !h.is_empty()).map(|h| std::path::Path::new(h).join(".claude")));
+                let Some(dir) = dir else {
+                    return Err(Failure::Io(std::io::Error::other("HOME is not set (or give --claude-dir)")));
+                };
+                plan.claude = Some(imux::setup::ClaudeHooks { dir, home: home.clone().filter(|h| !h.is_empty()).map(std::path::PathBuf::from) });
+            }
             if !m.get_flag("no-shell") {
                 let chosen = m.get_one::<String>("shell").cloned().or_else(|| std::env::var("SHELL").ok()).unwrap_or_default();
                 match imux::setup::Shell::named(&chosen) {

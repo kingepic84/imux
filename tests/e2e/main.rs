@@ -80,6 +80,8 @@ mod q_startname;
 mod q_agentsession;
 mod s_spawnlinks;
 mod q_spawnrestore;
+mod q_setupclaude;
+mod q_claudehook;
 mod q_restoreempty;
 mod q_panewait;
 mod q_panerun;

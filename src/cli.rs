@@ -623,11 +623,13 @@ pub fn tree() -> Command {
         )
         .subcommand(
             Command::new("setup")
-                .about("install the manpage and the agent skill, and add imux init to your shell startup file, if not done yet")
+                .about("install the manpage, the agent skill and the Claude Code hook, and add imux init to your shell startup file, if not done yet")
                 .arg(Arg::new("man-dir").long("man-dir").value_name("dir").help("where man1/imux.1 goes (default: ~/.local/share/man)"))
                 .arg(Arg::new("skill-path").long("skill-path").value_name("file").help("where SKILL.md goes (default: ~/.claude/skills/imux/SKILL.md)"))
                 .arg(Arg::new("no-man").long("no-man").action(ArgAction::SetTrue).help("leave the manual alone"))
-                .arg(Arg::new("no-skill").long("no-skill").action(ArgAction::SetTrue).help("leave the skill alone"))
+                .arg(Arg::new("no-skill").long("no-skill").action(ArgAction::SetTrue).help("leave the skill and the Claude Code hook alone"))
+                .arg(Arg::new("claude-dir").long("claude-dir").value_name("dir").help("Claude Code's directory, where the hook script and settings.json are (default: ~/.claude)"))
+                .arg(Arg::new("no-claude-hooks").long("no-claude-hooks").action(ArgAction::SetTrue).help("leave Claude Code's hooks alone"))
                 .arg(Arg::new("shell").long("shell").value_name("name").help("the shell whose startup file gets the imux init line (default: $SHELL)"))
                 .arg(Arg::new("no-shell").long("no-shell").action(ArgAction::SetTrue).help("leave the shell startup file alone")),
         )

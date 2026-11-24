@@ -1,0 +1,54 @@
+//! `imux setup` puts the Claude Code hook (a script and a settings.json that calls it) next to the
+//! skill, never rewrites a settings.json that is already there, and leaves Claude Code alone with
+//! `--no-claude-hooks` or `--no-skill`; `--claude-dir` names another directory.
+use crate::support::*;
+
+#[test]
+fn q_setupclaude() {
+    let mut e = Env::new("qsc");
+    e.set("IMUX_CONFIG", "/dev/null");
+    let mut t = Check::new("q_setupclaude");
+    let home = e.path("home");
+    std::fs::create_dir_all(&home).unwrap();
+    e.set("HOME", &p(&home));
+    for v in ["XDG_DATA_HOME", "ZDOTDIR", "XDG_CONFIG_HOME"] {
+        e.unset(v);
+    }
+    let script = home.join(".claude/imux-claude-hook.sh");
+    let settings = home.join(".claude/settings.json");
+
+    t.section("a fresh home");
+    let r = e.run(&["setup", "--no-man", "--no-shell"]);
+    t.ok("setup succeeds", r.code == 0);
+    t.matches("it says the script is installed", "claude hook: installed .*imux-claude-hook.sh", &r.all());
+    t.ok("the script is there and is the shipped one", std::fs::read_to_string(&script).map(|s| s.starts_with("#!/bin/sh") && s.contains("claude --resume")).unwrap_or(false));
+    let text = std::fs::read_to_string(&settings).unwrap_or_default();
+    t.ok("settings.json calls it for the name and the way back", text.contains("sh ~/.claude/imux-claude-hook.sh session") && text.contains("sh ~/.claude/imux-claude-hook.sh resume"));
+    t.ok("the skill is installed beside it", home.join(".claude/skills/imux/SKILL.md").exists());
+    let r = e.run(&["setup", "--no-man", "--no-shell"]);
+    t.matches("a second run changes nothing", "claude hook: already installed", &r.all());
+    t.matches("and says settings.json already calls the script", "already calls the script", &r.all());
+
+    t.section("a settings.json of the person's own");
+    std::fs::remove_file(&script).unwrap();
+    let mine = "{\"permissions\":{\"allow\":[\"Bash(ls)\"]}}\n";
+    std::fs::write(&settings, mine).unwrap();
+    let r = e.run(&["setup", "--no-man", "--no-shell"]);
+    t.ok("it is not changed", std::fs::read_to_string(&settings).unwrap() == mine);
+    t.matches("the entries to add are printed", "imux does not edit it.*\\n(.*\\n)*.*imux-claude-hook.sh resume", &r.all());
+    t.ok("the script is installed anyway", script.exists());
+
+    t.section("the ways to leave it alone");
+    let other = e.path("other");
+    std::fs::create_dir_all(&other).unwrap();
+    e.set("HOME", &p(&other));
+    let r = e.run(&["setup", "--no-man", "--no-shell", "--no-skill"]);
+    t.ok("--no-skill leaves Claude Code alone", r.code == 0 && !other.join(".claude").exists() && !r.all().contains("claude hook"));
+    let r = e.run(&["setup", "--no-man", "--no-shell", "--no-claude-hooks"]);
+    t.ok("--no-claude-hooks installs the skill only", r.code == 0 && other.join(".claude/skills/imux/SKILL.md").exists() && !other.join(".claude/imux-claude-hook.sh").exists() && !r.all().contains("claude hook"));
+    let elsewhere = e.path("elsewhere");
+    let r = e.run(&["setup", "--no-man", "--no-shell", "--claude-dir", &p(&elsewhere)]);
+    t.ok("--claude-dir names the directory", r.code == 0 && elsewhere.join("imux-claude-hook.sh").exists() && elsewhere.join("settings.json").exists());
+    t.matches("and the settings point at the whole path", "sh .*elsewhere/imux-claude-hook.sh session", &std::fs::read_to_string(elsewhere.join("settings.json")).unwrap_or_default());
+    t.finish();
+}
