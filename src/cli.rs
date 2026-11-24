@@ -189,7 +189,7 @@ pub fn report_command() -> Command {
         .arg(pane_arg())
         .arg(Arg::new("source").long("source").value_name("s").required(true).help("who reports; each source has its own sequence"))
         .arg(Arg::new("agent").long("agent").value_name("a").required(true).help("the program's name"))
-        .arg(Arg::new("state").long("state").value_name("state").required(true).help("idle, working, done, blocked or error"))
+        .arg(Arg::new("state").long("state").value_name("state").required(true).help("idle, working, done, blocked, or error"))
         .arg(Arg::new("seq").long("seq").value_name("n").value_parser(value_parser!(u64)).help("sequence number, the time by default"))
         .arg(text_flag("message", "message", "text", "a short note shown with the state"))
         .arg(Arg::new("resume").last(true).num_args(1..).allow_hyphen_values(true).value_name("resume command"))

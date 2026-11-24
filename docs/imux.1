@@ -65,7 +65,7 @@ and the version number and exits.
 It does not contact the server and starts none.
 .SH DESCRIPTION
 .B imux
-is a terminal multiplexer: it lets you create, use and control several terminals from one screen.
+is a terminal multiplexer: it lets you create, use, and control several terminals from one screen.
 A server owns all state and holds sessions; a session holds windows, a window holds panes, and
 every pane runs
 .B $SHELL
@@ -74,7 +74,7 @@ Clients attach from a terminal and can detach at any time without disturbing the
 The server starts on demand and exits when the last pane of the last session exits.
 .PP
 Inline images (iTerm2, Kitty and Sixel) are part of the cell buffer and the scrollback, not drawn
-over them, so they survive scrolling, resizing and splitting (see
+over them, so they survive scrolling, resizing, and splitting (see
 .BR "TERMINAL SUPPORT" ).
 The default key bindings are listed under
 .BR "KEY BINDINGS" .
@@ -275,7 +275,7 @@ Show the last messages (see
 .BR show\-messages ).
 .TP
 .B i
-Show the session, window, pane and the program in it.
+Show the session, window, pane, and the program in it.
 .TP
 .B r
 Redraw the screen.
@@ -410,7 +410,7 @@ Move by word, or by space-separated word.
 Top and bottom of the history.
 .TP
 .BR H\ M\ L
-Top, middle and bottom of the view.
+Top, middle, and bottom of the view.
 .TP
 .BR C\-u\ C\-d ,\ C\-b\ C\-f
 Scroll by half a screen or a screen; PageUp and PageDown scroll a screen.
@@ -585,7 +585,7 @@ by
 .BR save\-session .
 .PP
 A paste types the text with each line feed turned into a carriage return, as Enter does.
-ESC, control characters other than tab, DEL and the C1 range (U+0080 to U+009F) are dropped, so a
+ESC, control characters other than tab, DEL, and the C1 range (U+0080 to U+009F) are dropped, so a
 buffer can neither end a bracketed paste early nor send escape sequences; tab and line breaks stay.
 .PP
 The commands are listed under
@@ -840,13 +840,13 @@ to match exactly, with no prefix or pattern.
 is the pane of the agent given that name by
 .B "agent name"
 (for a command that wants a window or a session, that pane's window or session).
-It takes the place of the whole target, an agent name never matches a session, window or pane, and a
+It takes the place of the whole target, an agent name never matches a session, window, or pane, and a
 name that matches no agent is an error.
 Without a target, the pane the command was run in is meant, else the active pane of the session
 used last.
 .SS Who may run commands
 Every command works at the prompt, in a key binding and in the configuration file.
-From a shell, most commands (the lists, creating, closing and selecting sessions, windows and
+From a shell, most commands (the lists, creating, closing and selecting sessions, windows, and
 panes, sending keys, buffers, options) are carried out by the server itself, with no client needed.
 Any other command (\fBcopy\-mode\fP, \fBnext\-window\fP, \fBchoose\-tree\fP, ...) is run for a client
 looking at the session, and fails when there is none.
@@ -925,7 +925,7 @@ a program in a pane may never run a command that runs shell text or changes the 
 .BR if\-shell ,
 .BR pipe\-pane ,
 .BR source\-file ,
-the option, binding, hook and environment commands, menus, selecting a pane or window, resizing
+the option, binding, hook, and environment commands, menus, selecting a pane or window, resizing
 and renaming.
 They would outlive the pane or act in your name.
 Each such command from a pane that is not refused outright is logged (at the
@@ -1217,7 +1217,7 @@ The kinds that only inform are
 (\fB@name\fP, a user option; the dry read keeps no value) and
 .BR missing\-file .
 The exit status is 1 when there is a problem.
-Nothing is started, written or changed; programs run by lines such as
+Nothing is started, written, or changed; programs run by lines such as
 .B run\-shell
 and plugins are not run or read.
 .B \-\-summary
@@ -1243,7 +1243,7 @@ the option names after
 .B show\-options
 and their long forms, and the event names after
 .BR set\-hook .
-Sessions, windows and panes (the targets) are left to the shell.
+Sessions, windows, and panes (the targets) are left to the shell.
 Load it with
 .B eval "$(imux completions zsh)"
 (or
@@ -1269,7 +1269,7 @@ ksh has no programmable completion, so there is no script for it.
 Set the session's name; a name already in use is refused.
 .TP
 .BR switch\-client " " \-n | \-p | \-l | "\-t \fItarget\fP"
-Switch to the next, previous or last (previously looked at) session, or to the session (and
+Switch to the next, previous, or last (previously looked at) session, or to the session (and
 window) the target names.
 .TP
 .BR choose\-tree " [" \-s | \-w ]
@@ -1496,7 +1496,7 @@ There is one mark for the whole server; its window shows the flag
 (see
 .BR #{window_flags} ).
 .B \-d
-stops what a client types (keys, paste and mouse reports) from reaching the pane, and
+stops what a client types (keys, paste, and mouse reports) from reaching the pane, and
 .B \-e
 lets it through again;
 .B send\-keys
@@ -1521,7 +1521,7 @@ nothing and the drag goes on to the built\-in handling.
 .TP
 .BR resize\-pane " " \-Z
 Zoom the pane to fill the window; the others are hidden, not closed or resized.
-Running it again, moving to another pane, resizing, splitting or closing a pane ends the zoom.
+Running it again, moving to another pane, resizing, splitting, or closing a pane ends the zoom.
 The window shows the flag
 .B Z
 (see
@@ -1599,7 +1599,7 @@ Move every pane to the previous place (next with
 .BR respawn\-pane ", " respawn\-window " [" \-k "] [" \-c " \fIdir\fP] [" \-t " \fItarget\fP] [\fIcommand\fP ...]"
 Start the shell, or the command, again in a pane (for
 .BR respawn\-window ,
-a window of one pane): the program in it is hung up and the pane keeps its place, size and number.
+a window of one pane): the program in it is hung up and the pane keeps its place, size, and number.
 .B \-k
 is needed unless the program has ended and
 .B remain\-on\-exit
@@ -1938,7 +1938,7 @@ The keys are under
 .PD 0
 .TP 28
 .B list\-buffers
-Scrolling list of the paste buffers, newest first, with name, size and first characters.
+Scrolling list of the paste buffers, newest first, with name, size, and first characters.
 .TP
 .B choose\-buffer
 The same list; Enter pastes the selected buffer into the active pane.
@@ -2270,7 +2270,7 @@ for a double-quoted word instead), or read the environment: every variable is al
 .BI $IMUX_ NAME
 (\fB$IMUX_WINDOW_NAME\fP, ...), together with
 .BR $IMUX_PANE_ID " and " $IMUX_SOCKET_PATH .
-Numbers, flags and ids (\fB#{pane_id}\fP, \fB#{window_index}\fP, ...) need no quoting.
+Numbers, flags, and ids (\fB#{pane_id}\fP, \fB#{window_index}\fP, ...) need no quoting.
 The flags
 .B \-d
 and
@@ -2491,7 +2491,7 @@ pane before the program, for what a checkout needs
 The two are chained, in the syntax of the pane's shell, so that the program starts only if the
 setup succeeded:
 .B &&
-in sh, bash and zsh,
+in sh, bash, and zsh,
 .B "; and"
 in fish, and an
 .B if
@@ -2627,7 +2627,7 @@ there with the base from
 keeps the layout of its sessions across a server restart, a reboot or a crash, without a plugin.
 Saved, per session: its windows and their names, the splits of each window with their sizes, and
 which window and pane were active; per pane: its working directory and the foreground program.
-Scrollback, images and program state are not saved.
+Scrollback, images, and program state are not saved.
 .PP
 The server writes an autosave every
 .B autosave\-interval
@@ -2892,7 +2892,7 @@ again.
 Clear the record, if that source wrote it.
 .TP
 .B "imux agent list [\-\-json]"
-One line per pane with a record: pane number, session and window, state, name and message.
+One line per pane with a record: pane number, session and window, state, name, and message.
 .TP
 .B "imux agent get [pane | \-\-current] [\-\-json]"
 All fields of one pane's record: the state, who reported it, the program, its kind and progress
@@ -3255,7 +3255,7 @@ for the second.
 .B agent\-panel
 (bound to
 .BR A )
-lists every pane with a status report: glyph, name, message and time since the state changed.
+lists every pane with a status report: glyph, name, message, and time since the state changed.
 An agent given a name with
 .B "agent name"
 shows it in place of the window's.
@@ -3279,7 +3279,7 @@ the arrow keys, Page Up and Down,
 .B g
 and
 .B G
-move; Enter jumps to the pane (its session, window and focus);
+move; Enter jumps to the pane (its session, window, and focus);
 .B q
 or Escape closes.
 .B /
@@ -3349,7 +3349,7 @@ whether to show the selected pane's last lines, and how many rows (8)
 .B recent
 or
 .B order
-(session, window and pane order)
+(session, window, and pane order)
 .SH HOOKS
 A hook is an imux command line that runs when something happens.
 .TP
@@ -3497,7 +3497,7 @@ and
 .BR #{hook_argument_0} ...
 Control characters are removed from the values and they are cut to 256 characters.
 .PP
-Names, titles and messages can be set by a program in a pane.
+Names, titles, and messages can be set by a program in a pane.
 Like the other such formats, they are refused in the text of
 .BR run\-shell " and " if\-shell
 (see above): write
@@ -3753,7 +3753,7 @@ the option
 has to be on too.
 .TP
 .B windows
-Every other command on sessions, windows and panes: create, close, rename, select, respawn,
+Every other command on sessions, windows, and panes: create, close, rename, select, respawn,
 join, and start programs in them.
 .PP
 A plugin never gets
@@ -4307,7 +4307,7 @@ as current
 sends, and inside a passthrough envelope, as
 .B imgcat
 does behind a multiplexer).
-The file may be PNG, JPEG or GIF, or a Sixel stream (what
+The file may be PNG, JPEG, or GIF, or a Sixel stream (what
 .B imgcat
 sends when given a
 .B .six
@@ -4357,7 +4357,7 @@ image id, and the picture shows where they are), animation
 .RB ( a=f
 frames,
 .B a=a
-to play, stop and loop,
+to play, stop, and loop,
 .B a=c
 to compose; imux plays the frames itself, at least 20 milliseconds apart, at most 64 frames and
 32 MB for a picture and 8 animated pictures per pane), and, only when
@@ -4378,7 +4378,7 @@ Sixel.
 .PP
 Whatever the program uses, the picture reaches the outer terminal in the way that terminal
 understands.
-Width and height may be given in cells, pixels, percent or left to the picture.
+Width and height may be given in cells, pixels, percent, or left to the picture.
 .PP
 A picture is decoded once and stored in the pane; the cells it covers refer to parts of it, so it
 scrolls, is erased and falls out of the history exactly as text does.
@@ -4399,7 +4399,7 @@ How a picture reaches the screen depends on the client's terminal:
 .B iterm2
 Each rectangle of cells showing one picture is cut out, scaled to the exact pixel size of those
 cells and sent as an inline image; nothing is sent again until the rectangle changes.
-Text, borders, menus and the status line over part of a picture take precedence.
+Text, borders, menus, and the status line over part of a picture take precedence.
 .TP
 .B kitty
 The same rectangles are sent as placements over the text.
@@ -4436,7 +4436,7 @@ With
 .B kitty
 (kitty, Ghostty),
 .B sixel
-(foot, mlterm, contour or a
+(foot, mlterm, contour, or a
 .B TERM
 naming sixel), else
 .BR blocks .
@@ -4537,7 +4537,7 @@ string is discarded.
 Text that a program supplies for imux to show elsewhere (agent messages, process names, the output
 of a
 .B #()
-command, hook and event values) loses control characters, including the 8\-bit ones, and the
+command, hook, and event values) loses control characters, including the 8\-bit ones, and the
 bidirectional formatting characters that reorder the text around them.
 Pane titles and the variables
 .BR #{pane_title} ,
@@ -5194,7 +5194,7 @@ styles of messages and the command prompt
 styles of a menu, of its chosen item and of its border (default; bg=yellow,fg=black; default)
 .TP
 .B menu\-border\-lines
-line set of a menu's border: single, rounded, double, heavy, simple, padded or none (single)
+line set of a menu's border: single, rounded, double, heavy, simple, padded, or none (single)
 .TP
 .BR popup\-style ,\  popup\-border\-style
 styles of a popup and of its border (default; default)
@@ -5483,7 +5483,7 @@ lists them after the others and prints one with
 gives the value, or nothing when there is none, in
 .BR display\-message ,
 .B \-F
-formats, menu and popup titles, the status line and shell text.
+formats, menu and popup titles, the status line, and shell text.
 At most 4096 are kept, each at most 4096 bytes, and control characters are dropped from a value.
 They are not saved with a session: the configuration sets them again.
 .PP
@@ -5584,7 +5584,7 @@ continue.
 A client that panics resets the terminal before exiting.
 .PP
 The server writes no core file (it would hold what the panes showed) and raises its open file limit,
-since each pane, client and helper takes descriptors.
+since each pane, client, and helper takes descriptors.
 Programs in panes get the limits the server was started with, no descriptor of the server (signal
 pipe, other panes' terminals, sockets) and the default SIGPIPE.
 Git is run without
@@ -5661,7 +5661,7 @@ The location of the socket directory (on Linux
 when this is unset).
 .TP
 .B IMUX_LOG
-The log level: debug, info or error.
+The log level: debug, info, or error.
 Any other value, or none, selects warn.
 .TP
 .B IMUX_LOG_FILE

@@ -1,4 +1,4 @@
-//! The PNG, JPEG and GIF decoders behind the size limits.
+//! The PNG, JPEG, and GIF decoders behind the size limits.
 #![no_main]
 use libfuzzer_sys::fuzz_target;
 
