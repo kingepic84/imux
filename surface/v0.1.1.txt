@@ -1,0 +1,527 @@
+# The user-facing surface of imux. Made by scripts/check-surface.py; do not edit by hand.
+[keys]
+copy-mode C-Down	send-keys -X scroll-down
+copy-mode C-Space	send-keys -X begin-selection
+copy-mode C-Up	send-keys -X scroll-up
+copy-mode C-a	send-keys -X start-of-line
+copy-mode C-b	send-keys -X cursor-left
+copy-mode C-e	send-keys -X end-of-line
+copy-mode C-f	send-keys -X cursor-right
+copy-mode C-g	send-keys -X cancel
+copy-mode C-k	send-keys -X copy-end-of-line
+copy-mode C-n	send-keys -X cursor-down
+copy-mode C-p	send-keys -X cursor-up
+copy-mode C-r	send-keys -X search-backward
+copy-mode C-s	send-keys -X search-forward
+copy-mode C-v	send-keys -X page-down
+copy-mode C-w	send-keys -X copy-selection-and-cancel
+copy-mode Down	send-keys -X cursor-down
+copy-mode End	send-keys -X end-of-line
+copy-mode Escape	send-keys -X cancel
+copy-mode Home	send-keys -X start-of-line
+copy-mode Left	send-keys -X cursor-left
+copy-mode M-<	send-keys -X history-top
+copy-mode M->	send-keys -X history-bottom
+copy-mode M-Down	send-keys -X halfpage-down
+copy-mode M-Up	send-keys -X halfpage-up
+copy-mode M-b	send-keys -X previous-word
+copy-mode M-f	send-keys -X next-word-end
+copy-mode M-m	send-keys -X back-to-indentation
+copy-mode M-r	send-keys -X middle-line
+copy-mode M-v	send-keys -X page-up
+copy-mode M-w	send-keys -X copy-selection-and-cancel
+copy-mode N	send-keys -X search-reverse
+copy-mode PageDown	send-keys -X page-down
+copy-mode PageUp	send-keys -X page-up
+copy-mode R	send-keys -X rectangle-toggle
+copy-mode Right	send-keys -X cursor-right
+copy-mode Up	send-keys -X cursor-up
+copy-mode n	send-keys -X search-again
+copy-mode q	send-keys -X cancel
+copy-mode-vi $	send-keys -X end-of-line
+copy-mode-vi /	send-keys -X search-forward
+copy-mode-vi 0	send-keys -X start-of-line
+copy-mode-vi ?	send-keys -X search-backward
+copy-mode-vi B	send-keys -X previous-space
+copy-mode-vi C-b	send-keys -X page-up
+copy-mode-vi C-c	send-keys -X cancel
+copy-mode-vi C-d	send-keys -X halfpage-down
+copy-mode-vi C-e	send-keys -X scroll-down
+copy-mode-vi C-f	send-keys -X page-down
+copy-mode-vi C-q	send-keys -X cancel
+copy-mode-vi C-u	send-keys -X halfpage-up
+copy-mode-vi C-v	send-keys -X rectangle-toggle
+copy-mode-vi C-y	send-keys -X scroll-up
+copy-mode-vi D	send-keys -X copy-end-of-line
+copy-mode-vi Down	send-keys -X cursor-down
+copy-mode-vi E	send-keys -X next-space-end
+copy-mode-vi End	send-keys -X end-of-line
+copy-mode-vi Enter	send-keys -X copy-selection-and-cancel
+copy-mode-vi Escape	send-keys -X cancel
+copy-mode-vi G	send-keys -X history-bottom
+copy-mode-vi H	send-keys -X top-line
+copy-mode-vi Home	send-keys -X start-of-line
+copy-mode-vi L	send-keys -X bottom-line
+copy-mode-vi Left	send-keys -X cursor-left
+copy-mode-vi M	send-keys -X middle-line
+copy-mode-vi N	send-keys -X search-reverse
+copy-mode-vi PageDown	send-keys -X page-down
+copy-mode-vi PageUp	send-keys -X page-up
+copy-mode-vi Right	send-keys -X cursor-right
+copy-mode-vi Space	send-keys -X toggle-selection
+copy-mode-vi Up	send-keys -X cursor-up
+copy-mode-vi V	send-keys -X select-line
+copy-mode-vi W	send-keys -X next-space
+copy-mode-vi ^	send-keys -X back-to-indentation
+copy-mode-vi b	send-keys -X previous-word
+copy-mode-vi c	send-keys -X cancel
+copy-mode-vi e	send-keys -X next-word-end
+copy-mode-vi g	send-keys -X history-top
+copy-mode-vi h	send-keys -X cursor-left
+copy-mode-vi j	send-keys -X cursor-down
+copy-mode-vi k	send-keys -X cursor-up
+copy-mode-vi l	send-keys -X cursor-right
+copy-mode-vi n	send-keys -X search-again
+copy-mode-vi o	send-keys -X other-end
+copy-mode-vi q	send-keys -X cancel
+copy-mode-vi v	send-keys -X toggle-selection
+copy-mode-vi w	send-keys -X next-word
+copy-mode-vi y	send-keys -X copy-selection-and-cancel
+prefix !	break-pane
+prefix "	split-window -v
+prefix #	list-buffers
+prefix $	rename-session
+prefix %	split-window -h
+prefix &	kill-window
+prefix '	command-prompt -p index select-window
+prefix (	switch-client -p
+prefix )	switch-client -n
+prefix ,	rename-window
+prefix -	delete-buffer
+prefix .	command-prompt -p move move-window
+prefix 0	select-window -t :0
+prefix 1	select-window -t :1
+prefix 2	select-window -t :2
+prefix 3	select-window -t :3
+prefix 4	select-window -t :4
+prefix 5	select-window -t :5
+prefix 6	select-window -t :6
+prefix 7	select-window -t :7
+prefix 8	select-window -t :8
+prefix 9	select-window -t :9
+prefix :	command-prompt
+prefix ;	last-pane
+prefix =	choose-buffer
+prefix ?	list-keys
+prefix A	agent-panel
+prefix C-Down	resize-pane -D 1
+prefix C-Left	resize-pane -L 1
+prefix C-Right	resize-pane -R 1
+prefix C-Up	resize-pane -U 1
+prefix C-b	send-prefix
+prefix C-o	rotate-window
+prefix C-r	restore-session resurrect
+prefix C-s	save-session resurrect
+prefix C-z	suspend-client
+prefix D	choose-client
+prefix Down	select-pane -D
+prefix E	select-layout -E
+prefix L	switch-client -l
+prefix Left	select-pane -L
+prefix M	select-pane -M
+prefix M-1	select-layout even-horizontal
+prefix M-2	select-layout even-vertical
+prefix M-3	select-layout main-horizontal
+prefix M-4	select-layout main-vertical
+prefix M-5	select-layout tiled
+prefix M-6	select-layout main-horizontal-mirrored
+prefix M-7	select-layout main-vertical-mirrored
+prefix M-Down	resize-pane -D 5
+prefix M-Left	resize-pane -L 5
+prefix M-Right	resize-pane -R 5
+prefix M-Up	resize-pane -U 5
+prefix M-n	next-window -a
+prefix M-o	rotate-window -D
+prefix M-p	previous-window -a
+prefix N	new-session
+prefix PageUp	copy-mode
+prefix Right	select-pane -R
+prefix Space	next-layout
+prefix Tab	last-window
+prefix Up	select-pane -U
+prefix W	repo-wizard
+prefix [	copy-mode
+prefix ]	paste-buffer
+prefix c	new-window
+prefix d	detach-client
+prefix f	find-window
+prefix i	display-message "[#S] #I:#W, pane #P - #{pane_current_command} in #{pane_current_path}"
+prefix l	last-window
+prefix m	select-pane -m
+prefix n	next-window
+prefix o	select-pane -t :.+
+prefix p	previous-window
+prefix q	display-panes
+prefix r	refresh-client
+prefix s	choose-tree -s
+prefix t	clock-mode
+prefix w	choose-tree -w
+prefix x	kill-pane
+prefix z	resize-pane -Z
+prefix {	swap-pane -U
+prefix }	swap-pane -D
+prefix ~	show-messages
+[options]
+agent-control	off
+agent-dock-height	8
+agent-dock-position	right
+agent-dock-width	32
+agent-glyph-blocked	
+agent-glyph-done	
+agent-glyph-error	
+agent-glyph-working	
+agent-kind	""
+agent-overlay-height	60
+agent-overlay-width	70
+agent-panel	overlay
+agent-panel-jump	click
+agent-panel-preview	on
+agent-panel-preview-lines	8
+agent-panel-sort	state
+agent-stall-time	5
+agent-style-blocked	"fg=#f9e2af,bold"
+agent-style-done	"fg=#a6e3a1"
+agent-style-error	"fg=#f38ba8,bold"
+agent-style-working	"fg=#89b4fa"
+automatic-rename	on
+automatic-rename-format	"#{pane_current_command}"
+autosave-history	24
+autosave-history-interval	900
+autosave-interval	300
+base-index	0
+bell-action	any
+buffer-limit	50
+claude-programs	claude
+clock-mode-color	blue
+clock-mode-style	24
+command-from-panes	spawned
+copy-command	"if [ -n \"$WAYLAND_DISPLAY\" ] && command -v wl-copy >/dev/null 2>&1; then exec wl-copy; elif command -v xclip >/dev/null 2>&1; then exec xclip -selection clipboard; elif command -v xsel >/dev/null 2>&1; then exec xsel -b; else exec cat >/dev/null; fi"
+default-shell	""
+default-size	80x24
+display-panes-active-color	default
+display-panes-color	default
+display-panes-time	1000
+display-time	2000
+double-click-time	400
+emoji-width	parts
+escape-time	10
+focus-events	on
+history-limit	50000
+image-band-rows	4
+image-copy-text	[image]
+image-dither	none
+image-glyphs	quadrant
+image-kitty-placement	source
+image-mode	auto
+image-prefer	auto
+image-probe	auto
+image-probe-timeout	600
+image-scroll	on
+kitty-media	none
+menu-border-lines	single
+menu-border-style	default
+menu-selected-style	bg=yellow,fg=black
+menu-style	default
+message-command-style	bg=black,fg=yellow
+message-style	bg=yellow,fg=black
+mode-keys	emacs
+mode-style	bg=yellow,fg=black
+monitor-activity	off
+monitor-bell	on
+monitor-silence	0
+mouse	on
+pane-active-border-style	fg=green
+pane-base-index	0
+pane-border-format	"#{?pane_active,#[reverse],}#{pane_index}#[default] \"#{pane_title}\""
+pane-border-lines	single
+pane-border-status	off
+pane-border-style	""
+pane-min-height	5
+pane-min-width	20
+popup-border-lines	single
+popup-border-style	default
+popup-from-panes	on
+popup-style	default
+prefix	C-b
+prefix2	None
+remain-on-exit	off
+repeat-time	500
+repos-dir	~
+restore-claude	on
+restore-commands	"claude vim nvim nano less man htop ssh"
+restore-on-start	on
+run-shell-timeout	10
+set-clipboard	external
+set-titles	off
+set-titles-string	"#S:#I:#W - \"#T\""
+shell-syntax	auto
+silence-action	other
+spawned-depth	2
+spawned-panes-max	16
+status	on
+status-command-timeout	2
+status-commands-max	8
+status-interval	5
+status-justify	left
+status-left	"[#S] "
+status-left-length	40
+status-left-style	default
+status-position	bottom
+status-right	"%H:%M %d-%b-%y"
+status-right-length	80
+status-right-style	default
+status-style	bg=green,fg=black
+strip-environment	"ITERM_SESSION_ID ITERM_PROFILE KITTY_WINDOW_ID KITTY_PID KITTY_PUBLIC_KEY WEZTERM_PANE WEZTERM_UNIX_SOCKET ZELLIJ* STY CLAUDECODE CLAUDE_CODE_SESSION_ID CLAUDE_CODE_CHILD_SESSION CLAUDE_CODE_MESSAGING_TOKEN CLAUDE_CODE_MESSAGING_SOCKET CLAUDE_CODE_ENTRYPOINT"
+synchronize-panes	off
+tmux-compat	on
+update-environment	"DISPLAY SSH_ASKPASS SSH_AUTH_SOCK SSH_AGENT_PID SSH_CONNECTION WINDOWID XAUTHORITY"
+visual-activity	off
+visual-bell	off
+visual-silence	off
+window-active-style	""
+window-size	smallest
+window-status-activity-style	reverse
+window-status-bell-style	reverse
+window-status-current-format	"#I:#W#{window_flags}"
+window-status-current-style	default
+window-status-format	"#I:#W#{window_flags}"
+window-status-last-style	default
+window-status-separator	" "
+window-status-style	default
+window-style	""
+word-separators	""
+worktree-base	""
+worktree-branch-format	"#{name}"
+worktree-command	""
+worktree-detach	off
+worktree-layout	claude|shell
+worktree-name-pattern	[A-Za-z0-9][A-Za-z0-9._/-]*
+worktree-path	"#{repo}-worktrees/#{name}"
+worktree-setup	""
+worktree-start	""
+[commands]
+agent
+agent-panel
+api
+api-agent-get
+api-agent-list
+api-agent-name
+api-agent-resolve
+api-agent-start
+api-pane-run
+api-pane-wait
+api-seq
+attach
+bind-key
+break-pane
+capture-pane
+check-config
+choose-buffer
+choose-client
+choose-session
+choose-tree
+choose-window
+clock-mode
+command-prompt
+completions
+copy-mode
+delete-buffer
+delete-snapshot
+detach-client
+display-menu
+display-message
+display-panes
+display-popup
+doctor
+events
+find-window
+has-session
+if-shell
+init
+join-pane
+kill-pane
+kill-server
+kill-session
+kill-window
+last-pane
+last-window
+list-buffers
+list-clients
+list-keys
+list-panes
+list-sessions
+list-snapshots
+list-windows
+load-buffer
+ls
+menu
+move-pane
+move-window
+new
+new-session
+new-window
+next-layout
+next-window
+pane
+paste-buffer
+pipe-pane
+plugin
+popup
+previous-window
+refresh-client
+rename-session
+rename-window
+repo-wizard
+resize-pane
+respawn-pane
+respawn-window
+restore
+restore-session
+rotate-window
+run-shell
+save
+save-buffer
+save-session
+select-layout
+select-pane
+select-window
+send-keys
+send-prefix
+set-buffer
+set-environment
+set-hook
+set-option
+set-window-option
+setup
+show-buffer
+show-environment
+show-hooks
+show-messages
+show-options
+show-window-options
+skill
+snapshots
+source-file
+split-window
+suspend-client
+swap-pane
+swap-window
+switch-client
+unbind-key
+unlink-window
+version
+wait-for
+worktree
+worktree-remove
+[usage]
+--
+--agent
+--branch
+--detach
+--force
+--help,
+--help:
+--history
+--message
+--no-setup
+--seq
+--setup
+--slug
+--source
+--start
+--state
+--summary
+--timeout
+--types
+--until
+--version
+--wait
+-L
+-S
+-d
+-r
+-s
+-t
+<any
+COMMAND
+a
+a,b
+above>
+agent
+and
+api
+attach
+base
+bash
+before
+check-config
+cmd
+command
+commands
+completions
+delete-snapshot
+dir
+disable
+doctor
+enable
+events
+file...
+fish
+flags
+get
+history/NAME
+imux
+init
+kill-server
+link
+list
+list-keys
+logs
+ls
+m
+n
+name
+named
+new
+nu
+of
+pane
+path
+plugin
+prompt
+pwsh
+release-agent
+repo
+report-agent
+restore
+resume
+s
+save
+server,
+snapshots
+st
+states
+text
+text...
+the
+their
+unlink
+usage:
+version
+wait
+worktree
+worktree-remove
+zsh
+[versions]
+api	api=1
+snapshot	imux-snapshot 1
