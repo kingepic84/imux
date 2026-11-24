@@ -376,6 +376,10 @@ struct Server {
     start_waiters: Vec<agentstart::StartWaiter>,
     /// Agent names of restored panes, until their program reports again (`names.rs`).
     pending_names: HashMap<PaneId, String>,
+    /// Panes whose waiting name came from `agent start`: the name goes to every record the pane
+    /// gets until the started program ends, so a program that clears or replaces its record while
+    /// it starts up (behind a dialog, say) does not lose it (`names.rs`).
+    started_names: HashSet<PaneId>,
     /// `wait-for` channels and the clients blocked on them.
     channels: channels::Channels,
     /// `pipe-pane` commands, by pane.
@@ -512,6 +516,7 @@ pub fn run() -> io::Result<()> {
         output_touched: HashSet::new(),
         start_waiters: Vec::new(),
         pending_names: HashMap::new(),
+        started_names: HashSet::new(),
         channels: channels::Channels::default(),
         pipes: pipes::Pipes::default(),
         aliases: HashMap::new(),
@@ -2111,11 +2116,16 @@ impl Server {
     /// foreground process is the shell again (killed, crashed, or left without saying so).
     fn expire_agents(&mut self) {
         let mut changed = false;
-        for pane in self.sessions.iter_mut().flat_map(|s| s.windows.iter_mut()).flat_map(|w| w.panes.values_mut()) {
+        let mut ended = Vec::new();
+        for (id, pane) in self.sessions.iter_mut().flat_map(|s| s.windows.iter_mut()).flat_map(|w| w.panes.iter_mut()) {
             if pane.agent.is_some() && proc::foreground_pid(pane.pty.master.as_fd()) == Some(pane.pty.child.as_raw()) {
                 changed |= agent::program_ended(&mut pane.agent);
                 changed |= agent::drop_resume(&mut pane.agent);
+                ended.push(*id);
             }
+        }
+        for id in ended {
+            self.forget_start_name(id);
         }
         if changed {
             self.dirty = true;
@@ -2244,6 +2254,8 @@ impl Server {
                     if self.pane_mut(id).is_some_and(|p| agent::prompt_started(&mut p.agent)) {
                         self.dirty = true;
                     }
+                    // the shell is asking for a command: the program `agent start` typed is over
+                    self.forget_start_name(id);
                     continue;
                 }
             };

@@ -91,7 +91,7 @@ imux agent start helper --kind claude --pane 8 -- --model sonnet
 
 imux never reads the screen: a program that does not report its state fails the start by
 timeout. `not_ready` means the pane is busy, has an agent already, or the program is blocked at
-startup (it keeps the name: look at it with `agent read`).
+startup (it keeps the name, also through the program's later reports: look at it with `agent read`).
 
 ## Give it work and wait
 

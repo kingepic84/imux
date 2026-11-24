@@ -122,6 +122,7 @@ impl Server {
         pane.pty.write(format!("{line}\r").as_bytes()).map_err(|e| format!("agent start: {e}"))?;
         log::info(&format!("agent start: {name} ({}) typed into pane {id}", if kind.is_empty() { "worktree-command" } else { kind }));
         self.pending_names.insert(id, name.clone());
+        self.started_names.insert(id);
         self.start_waiters.push(StartWaiter { client, pane: id, name: name.clone(), deadline: Instant::now() + Duration::from_millis(timeout_ms), timeout_ms });
         self.deferred = true;
         Ok(String::new())
@@ -148,6 +149,7 @@ impl Server {
                 Some(_) if w.deadline <= now => {
                     if self.pending_names.get(&w.pane) == Some(&w.name) {
                         self.pending_names.remove(&w.pane);
+                        self.started_names.remove(&w.pane);
                     }
                     Some(Err(tag(
                         "timeout",

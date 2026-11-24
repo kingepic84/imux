@@ -3065,6 +3065,10 @@ and keeps its name; one that reports nothing in time ends it with
 and the name is not kept.
 A client that goes away ends only the wait: the program keeps running and its first report
 gives it the name.
+The name stays with the program that was started: if it drops its record or reports as another
+program while it starts up (behind a dialog, say), the name goes to its next record, until the
+shell is back at its prompt or the name is changed with
+.BR "agent name" .
 It prints
 .B "ready %id"
 and with

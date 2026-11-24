@@ -64,6 +64,7 @@ impl Server {
         let record = pane.agent.as_mut().ok_or_else(|| tag("agent_not_running", &format!("pane {id} has no agent record to name")))?;
         record.name = (!name.is_empty()).then(|| name.clone());
         self.pending_names.remove(&id);
+        self.started_names.remove(&id);
         self.dirty = true;
         log::info(&format!("agent name: pane {id} is {}", if name.is_empty() { "unnamed" } else { name }));
         Ok("ok\n".to_string())
@@ -77,14 +78,32 @@ impl Server {
         if !has_record {
             return;
         }
-        self.pending_names.remove(&id);
-        if self.pane_named(&name).is_some() {
-            log::info(&format!("agent name {name} of pane {id} is taken, not restored"));
-            return;
+        // A name from `agent start` stays waiting while its program runs: the program may clear or
+        // replace its record on the way up, and the name must go to the next one.
+        let sticky = self.started_names.contains(&id);
+        if !sticky {
+            self.pending_names.remove(&id);
+        }
+        match self.pane_named(&name) {
+            Some(holder) if holder == id => return,
+            Some(_) => {
+                self.forget_start_name(id);
+                log::info(&format!("agent name {name} of pane {id} is taken, not restored"));
+                return;
+            }
+            None => {}
         }
         if let Some(record) = self.sessions[place.si].windows[place.wi].panes.get_mut(&id).and_then(|p| p.agent.as_mut()) {
             record.name = Some(name);
             self.dirty = true;
+        }
+    }
+
+    /// The program that `agent start` typed into a pane is over (or its name was changed by hand):
+    /// stop giving the waiting name to the pane's records.
+    pub(super) fn forget_start_name(&mut self, id: PaneId) {
+        if self.started_names.remove(&id) {
+            self.pending_names.remove(&id);
         }
     }
 
@@ -95,5 +114,6 @@ impl Server {
         }
         let live: Vec<PaneId> = self.pending_names.keys().copied().filter(|id| self.place_of_pane(*id).is_some()).collect();
         self.pending_names.retain(|id, _| live.contains(id));
+        self.started_names.retain(|id| live.contains(id));
     }
 }
