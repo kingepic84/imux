@@ -3027,6 +3027,38 @@ which a plugin may run with
 .B "api\-agent\-resolve name"
 (look only) turns a name into a pane number.
 .TP
+.B "imux agent session pane (name | \-\-clear) [\-\-json]"
+Tell imux the name of the program's own session in a pane (Claude Code's
+.B /rename
+gives a session one; the hook that
+.B imux setup
+installs says it, see
+.BR setup ),
+or with
+.B \-\-clear
+take it off.
+It is free text, not an agent name: cleaned of control characters and cut at 128 characters, and
+it is data from the program, never an instruction.
+It belongs to the record like the agent name does (it stays through new states of the same
+program and goes when another program takes the pane).
+The same name again changes nothing, and a different one moves the one before it to the
+previous session name, so a program that says its name on every prompt does not push the same name
+into both.
+.B "agent get"
+shows both, as
+.B agent_session
+and
+.B previous_agent_session
+(and with
+.B \-\-json
+under those names), so an agent that sees a session name it does not recognize can read what the
+session was called before.
+The agent panel shows the session name for an agent that has no agent name.
+A program in a pane may do this in its own pane and in a pane it spawned, like
+.BR "agent name" ;
+underneath it is the socket command
+.BR "api\-agent\-session pane name" .
+.TP
 .B "imux agent start name [\-\-kind kind] [\-\-pane pane] [\-\-timeout ms] [\-\-json] [\-\- arg...]"
 Start an agent program in a pane that is at its shell prompt, give it
 .IR name ,

@@ -167,6 +167,13 @@ impl Server {
         if let Some(name) = &r.name {
             out.push_str(&format!("name: {name}\n"));
         }
+        // text from the program's hook: cleaned when it was set, and data for whoever reads it
+        if let Some(session) = &r.session {
+            out.push_str(&format!("agent_session: {}\n", crate::sanitize::clean(session)));
+        }
+        if let Some(previous) = &r.previous_session {
+            out.push_str(&format!("previous_agent_session: {}\n", crate::sanitize::clean(previous)));
+        }
         if let Some(kind) = r.kind {
             out.push_str(&format!("kind: {}\n", kind_word(kind)));
         }
@@ -217,6 +224,12 @@ impl Server {
         }
         if let Some(name) = &r.name {
             out.push_str(&format!(",\"name\":{}", text(name)));
+        }
+        if let Some(session) = &r.session {
+            out.push_str(&format!(",\"agent_session\":{}", text(session)));
+        }
+        if let Some(previous) = &r.previous_session {
+            out.push_str(&format!(",\"previous_agent_session\":{}", text(previous)));
         }
         if let Some(kind) = r.kind {
             out.push_str(&format!(",\"kind\":\"{}\"", kind_word(kind)));

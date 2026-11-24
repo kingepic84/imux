@@ -95,6 +95,9 @@ pub fn build_rows(sessions: &[Session], client: usize, now: Instant, sort: Sort)
                 }
                 if let Some(given) = &record.name {
                     name.clone_from(given);
+                } else if let Some(session_name) = &record.session {
+                    // the program's own session name, as its hook gave it, when nobody named the agent
+                    name = crate::sanitize::clean(session_name);
                 }
                 rows.push(AgentRow {
                     session: session.id,

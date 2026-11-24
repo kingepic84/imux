@@ -46,7 +46,7 @@ const COMMANDS: &[&str] = &[
     "display-panes", "copy-mode", "resize-pane", "select-layout", "next-layout", "break-pane", "swap-pane", "rotate-window",
     "swap-window", "move-window", "show-messages", "refresh-client", "command-prompt", "suspend-client", "choose-client", "clock-mode", "display-menu", "menu", "display-popup", "popup",
     "find-window", "switch-client", "choose-tree", "list-buffers", "choose-buffer", "delete-buffer", "show-buffer", "set-buffer",
-    "paste-buffer", "save-buffer", "load-buffer", "unlink-window", "choose-window", "choose-session", "api-agent-list", "api-agent-get", "api-pane-run", "api-pane-wait", "api-agent-name", "api-agent-resolve", "api-agent-start", "api-seq",
+    "paste-buffer", "save-buffer", "load-buffer", "unlink-window", "choose-window", "choose-session", "api-agent-list", "api-agent-get", "api-pane-run", "api-pane-wait", "api-agent-name", "api-agent-session", "api-agent-resolve", "api-agent-start", "api-seq",
 ];
 
 /// The commands the server runs, by their long names, for the help of `imux`.

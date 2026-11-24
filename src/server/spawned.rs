@@ -170,7 +170,7 @@ impl Server {
                 }
                 Ok(same())
             }
-            "api-agent-name" => {
+            "api-agent-name" | "api-agent-session" => {
                 let id = rest.first().and_then(|p| p.trim_start_matches('%').parse::<PaneId>().ok());
                 match id {
                     Some(id) if self.in_subtree(me, id, false) => Ok(same()),

@@ -70,6 +70,25 @@ impl Server {
         Ok("ok\n".to_string())
     }
 
+    /// `api-agent-session PANE TEXT` (an empty TEXT takes the name off): the name of the program's
+    /// own session, given by its hook. It is data (cleaned, cut), shown by `agent get` and in the
+    /// agent panel; the name already there again changes nothing, so the hook may say it on every
+    /// prompt and the name before it is kept apart.
+    pub(super) fn cmd_agent_session(&mut self, rest: &[String]) -> Result<String, String> {
+        let [pane, text] = rest else { return Err(tag("invalid_argument", "usage: api-agent-session pane name")) };
+        let id = pane.trim_start_matches('%').parse::<PaneId>().map_err(|_| tag("invalid_argument", &format!("{pane:?} is not a pane number")))?;
+        let place = self.place_of_pane(id).ok_or_else(|| tag("not_found", &format!("no pane {id}")))?;
+        let pane = self.sessions[place.si].windows[place.wi].panes.get_mut(&id).ok_or_else(|| tag("not_found", &format!("no pane {id}")))?;
+        let record = pane.agent.as_mut().ok_or_else(|| tag("agent_not_running", &format!("pane {id} has no agent record to give a session name")))?;
+        let changed = agent::set_session(record, text);
+        let now = record.session.clone();
+        if changed {
+            self.dirty = true;
+            log::info(&format!("agent session: pane {id} is called {:?}", now.as_deref().unwrap_or("")));
+        }
+        Ok("ok\n".to_string())
+    }
+
     /// Give a pane that has just got its first record the name it had before a restore.
     pub(super) fn adopt_pending_name(&mut self, id: PaneId) {
         let Some(name) = self.pending_names.get(&id).cloned() else { return };

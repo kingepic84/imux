@@ -281,6 +281,14 @@ fn run(args: &[String]) -> Result<i32, Failure> {
                     format!("{{\"pane\":\"%{pane}\",\"name\":{shown}{seq}}}\n")
                 })
             }
+            Some(("session", n)) => {
+                let (pane, name) = cli::session_from(n);
+                let seq = noted_seq(n.get_flag("json"));
+                answer(n.get_flag("json"), client::ask_text(run_words(&["api-agent-session", &pane.to_string(), &name])), |_| {
+                    let shown = if name.is_empty() { "null".to_string() } else { errcode::json_string(&name) };
+                    format!("{{\"pane\":\"%{pane}\",\"session\":{shown}{seq}}}\n")
+                })
+            }
             Some(("start", s)) => {
                 let json = s.get_flag("json");
                 let rest = cli::start_words(s);

@@ -253,7 +253,7 @@ const REMOTE: &[&str] = &[
     "set-hook", "show-hooks", "plugin-reload", "select-layout", "selectl", "resize-pane", "resizep", "move-window", "movew", "swap-window", "swapw",
     "detach-client", "detach", "swap-pane", "swapp", "unlink-window", "unlinkw", "copy-mode",
     "api-agent-list", "api-agent-get", "api-pane-run", "api-pane-wait",
-    "api-agent-name", "api-agent-resolve", "api-agent-start", "api-seq",
+    "api-agent-name", "api-agent-session", "api-agent-resolve", "api-agent-start", "api-seq",
 ];
 
 /// The flags of `new-window`, `split-window` and `select-window` (those that take a value, then
@@ -791,6 +791,7 @@ impl Server {
             "plugin-reload" => self.plugin_reload(),
             "api-pane-run" => self.pane_run(rest),
             "api-agent-name" => self.cmd_agent_name(rest),
+            "api-agent-session" => self.cmd_agent_session(rest),
             "api-agent-resolve" => self.cmd_agent_resolve(rest),
             "api-pane-wait" => self.cmd_pane_wait(client, rest, caller, own_pane_only),
             "api-agent-start" => self.cmd_agent_start(client, rest, caller),

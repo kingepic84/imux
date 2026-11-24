@@ -41,6 +41,31 @@ pub struct AgentRecord {
     /// The name given with `imux agent name`: unique among the panes that have a record, and gone
     /// with the record (or when another program takes the pane over).
     pub name: Option<String>,
+    /// The name of the program's own session (Claude Code's `/rename`), as its hook gave it with
+    /// `imux agent session`: free text, cleaned, data. It follows the same program, like `name`.
+    pub session: Option<String>,
+    /// The session name before the last change. Setting the name that is already there changes
+    /// nothing, so this is never the same name as `session`.
+    pub previous_session: Option<String>,
+}
+
+/// The most characters of a session name.
+pub const MAX_SESSION: usize = 128;
+
+/// Give the record the session name `text` (empty takes it off). The name already there again
+/// changes nothing and returns false, so a hook that says the name on every prompt does not push the
+/// same name into `previous_session`. A different name moves the one before it there.
+pub fn set_session(record: &mut AgentRecord, text: &str) -> bool {
+    let cleaned: String = crate::sanitize::clean(text).chars().take(MAX_SESSION).collect();
+    let new = Some(cleaned.trim().to_string()).filter(|s| !s.is_empty());
+    if record.session == new {
+        return false;
+    }
+    if record.session.is_some() {
+        record.previous_session = record.session.take();
+    }
+    record.session = new;
+    true
 }
 
 /// The most characters of an agent's name.
@@ -119,6 +144,8 @@ fn put(slot: &mut Option<AgentRecord>, report: Report, source: &str, now: Instan
         return slot.take().is_some();
     }
     let kept_name = slot.as_ref().filter(|old| old.app == report.app).and_then(|old| old.name.clone());
+    let (kept_session, kept_previous) =
+        slot.as_ref().filter(|old| old.app == report.app).map_or((None, None), |old| (old.session.clone(), old.previous_session.clone()));
     let (before, since, seen_by, seqs, kept) = match slot.take() {
         Some(old) if old.state == report.state => (old.before, old.since, old.seen_by, old.seqs, old.resume),
         Some(old) => (Some(old.state), now, HashSet::new(), old.seqs, old.resume),
@@ -138,6 +165,8 @@ fn put(slot: &mut Option<AgentRecord>, report: Report, source: &str, now: Instan
         seqs,
         resume: resume.or(kept),
         name: kept_name,
+        session: kept_session,
+        previous_session: kept_previous,
     });
     true
 }
@@ -444,5 +473,53 @@ mod tests {
         assert!(validate_resume(&many, &allowed).is_err());
         let big = vec!["claude".to_string(), "x".repeat(9000)];
         assert!(validate_resume(&big, &allowed).is_err());
+    }
+
+    fn with_session_slot() -> Option<AgentRecord> {
+        let mut slot = None;
+        apply(&mut slot, Report { state: State::Idle, kind: None, progress: None, app: Some("claude-code".into()), title: None, msg: None, id: None }, Instant::now());
+        slot
+    }
+
+    #[test]
+    fn the_same_session_name_again_changes_nothing_and_a_new_one_keeps_the_one_before() {
+        let mut slot = with_session_slot();
+        let r = slot.as_mut().unwrap();
+        assert!(set_session(r, "Homelab and imux"), "the first name is a change");
+        assert_eq!((r.session.as_deref(), r.previous_session.as_deref()), (Some("Homelab and imux"), None));
+        // a hook that says it on every prompt
+        for _ in 0..3 {
+            assert!(!set_session(r, "Homelab and imux"), "the same name is no change");
+        }
+        assert_eq!((r.session.as_deref(), r.previous_session.as_deref()), (Some("Homelab and imux"), None), "nothing was pushed");
+        assert!(set_session(r, "Second"));
+        assert_eq!((r.session.as_deref(), r.previous_session.as_deref()), (Some("Second"), Some("Homelab and imux")));
+        assert!(!set_session(r, "Second"));
+        assert_eq!(r.previous_session.as_deref(), Some("Homelab and imux"), "still the name before");
+        assert!(set_session(r, "Homelab and imux"), "going back is a change");
+        assert_eq!((r.session.as_deref(), r.previous_session.as_deref()), (Some("Homelab and imux"), Some("Second")));
+        assert!(set_session(r, ""), "an empty name takes it off");
+        assert_eq!((r.session.as_deref(), r.previous_session.as_deref()), (None, Some("Homelab and imux")));
+        assert!(!set_session(r, "  "), "and nothing again is no change");
+    }
+
+    #[test]
+    fn a_session_name_is_cleaned_and_cut_and_follows_the_same_program() {
+        let mut slot = with_session_slot();
+        let r = slot.as_mut().unwrap();
+        set_session(r, "  a\u{1b}[31mb\u{202e}c\u{7}  ");
+        assert_eq!(r.session.as_deref(), Some("a[31mbc"), "controls and bidi marks are dropped, the ends trimmed");
+        set_session(r, &"x".repeat(500));
+        assert_eq!(r.session.as_ref().map(|s| s.chars().count()), Some(MAX_SESSION));
+        set_session(r, "kept");
+        let (before, previous) = (r.session.clone(), r.previous_session.clone());
+        // a new state from the same program keeps both
+        apply(&mut slot, Report { state: State::Working, kind: None, progress: None, app: Some("claude-code".into()), title: None, msg: None, id: None }, Instant::now());
+        let r = slot.as_ref().unwrap();
+        assert_eq!((r.session.clone(), r.previous_session.clone()), (before, previous));
+        // another program taking the pane starts without them
+        apply(&mut slot, Report { state: State::Working, kind: None, progress: None, app: Some("other".into()), title: None, msg: None, id: None }, Instant::now());
+        let r = slot.as_ref().unwrap();
+        assert_eq!((r.session.as_deref(), r.previous_session.as_deref()), (None, None));
     }
 }

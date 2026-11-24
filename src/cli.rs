@@ -20,7 +20,7 @@ const STATES: [&str; 5] = ["idle", "working", "done", "blocked", "error"];
 
 /// The words of the groups that have sub-commands of ours; a first word `agent` with any other
 /// second word is the server's agent-panel command.
-pub const AGENT_WORDS: [&str; 7] = ["list", "get", "wait", "prompt", "read", "name", "start"];
+pub const AGENT_WORDS: [&str; 8] = ["list", "get", "wait", "prompt", "read", "name", "session", "start"];
 
 /// Words of imux's own that take no flags and are also the name of a command the server runs
 /// (`list-keys -T prefix`): with anything the tree does not take, the server's command of that
@@ -286,11 +286,29 @@ pub fn prompt_from(m: &ArgMatches) -> Result<PromptArgs, String> {
 pub fn name_command() -> Command {
     Command::new("name")
         .about("give the agent in a pane a name, to use in place of the pane (agent:NAME as a target)")
+        // the group puts `<name|--clear>` first by itself; the pane is the first word
+        .override_usage("imux agent name [OPTIONS] <pane> <name|--clear>")
         .arg(pane_arg().required(true))
         .arg(json_arg())
         .arg(Arg::new("name").value_name("name").help("a lowercase letter, then lowercase letters, digits, _ and -, at most 32"))
         .arg(Arg::new("clear").long("clear").action(ArgAction::SetTrue).help("take the name off"))
         .group(ArgGroup::new("what").args(["name", "clear"]).required(true).multiple(false))
+}
+
+pub fn session_command() -> Command {
+    Command::new("session")
+        .about("give the agent in a pane the name of the program's own session (Claude Code's /rename), as its hook does; agent get shows it with the one before")
+        .override_usage("imux agent session [OPTIONS] <pane> <name|--clear>")
+        .arg(pane_arg().required(true))
+        .arg(json_arg())
+        .arg(Arg::new("name").value_name("name").allow_hyphen_values(true).help("the session's name, as text: cleaned and cut at 128 characters; the same name again changes nothing"))
+        .arg(Arg::new("clear").long("clear").action(ArgAction::SetTrue).help("take the session name off"))
+        .group(ArgGroup::new("what").args(["name", "clear"]).required(true).multiple(false))
+}
+
+/// The pane and the name of `agent session` (empty to take it off).
+pub fn session_from(m: &ArgMatches) -> (u32, String) {
+    name_from(m)
 }
 
 /// The pane and the name of `agent name` (empty to take it off).
@@ -575,6 +593,7 @@ pub fn tree() -> Command {
                 .subcommand(prompt_command())
                 .subcommand(read_command())
                 .subcommand(name_command())
+                .subcommand(session_command())
                 .subcommand(start_command()),
         )
         .subcommand(
@@ -934,5 +953,19 @@ mod tests {
         assert!(e.contains("usage: imux pane run pane"), "{e}");
         let e = parse_leaf(read_command(), &words("4 --lines 0")).unwrap_err();
         assert!(e.contains("usage: imux agent read pane"), "{e}");
+    }
+
+    #[test]
+    fn the_help_of_agent_name_and_session_names_the_pane_first_as_the_command_takes_it() {
+        for (mut command, word) in [(name_command(), "name"), (session_command(), "session")] {
+            let usage = command.clone().render_usage().to_string();
+            assert!(usage.contains(&format!("imux agent {word} [OPTIONS] <pane> <name|--clear>")), "{usage}");
+            let help = command.render_long_help().to_string();
+            assert!(!help.contains("<name|--clear> <pane>"), "{help}");
+        }
+        // and the order the usage names is the order that works
+        assert!(tree().try_get_matches_from(["imux", "agent", "name", "3", "mine"]).is_ok());
+        assert!(tree().try_get_matches_from(["imux", "agent", "name", "mine", "3"]).is_err(), "the name first is not accepted");
+        assert!(tree().try_get_matches_from(["imux", "agent", "session", "3", "A name"]).is_ok());
     }
 }
