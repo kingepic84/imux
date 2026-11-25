@@ -77,6 +77,7 @@ mod q_restoreresume;
 mod q_borderlines;
 mod q_agentstart;
 mod q_startname;
+mod q_restartserver;
 mod q_lints;
 mod q_releasenotes;
 mod q_setuphint;

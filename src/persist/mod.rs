@@ -301,6 +301,11 @@ impl Store {
         Ok(())
     }
 
+    /// When the autosave file was last written, if there is one.
+    pub fn autosave_modified(&self) -> Option<std::time::SystemTime> {
+        fs::metadata(self.root.join(AUTOSAVE)).and_then(|m| m.modified()).ok()
+    }
+
     /// The last autosave; a missing or damaged file falls back to the previous one. `Ok(None)`
     /// when there is nothing to restore.
     pub fn load_autosave(&self) -> io::Result<Option<Snapshot>> {

@@ -1071,6 +1071,45 @@ brings them back when imux is started again).
 A server that predates the check cannot say so; the client reports that it closed the connection
 without an answer and gives the same advice.
 .TP
+.B imux restart\-server [\-y|\-\-yes] [\-d|\-\-detach]
+Stop the server so that its sessions are saved, and start this imux, which brings them back: what to
+run after installing a new version, so that the server runs the new code.
+It tells you what the server holds (sessions, windows, and attached clients, which are disconnected)
+and what is lost, and asks
+.BR "Restart it? [y/N]" ;
+.B \-\-yes
+does not ask (for scripts; without a terminal and without it the command refuses).
+The server is sent
+.BR SIGTERM ,
+which makes it write one more autosave, and the next server restores that autosave when its first
+client attaches
+.RB ( restore\-on\-start ).
+So a restart keeps what a restore keeps: the layout, the directories, the programs in
+.BR restore\-commands ,
+and the agents with their names; other programs end, and the scrollback is lost.
+It warns when
+.B autosave\-interval
+is 0 (nothing is saved then) or
+.B restore\-on\-start
+is off (only
+.B imux restore
+brings the sessions back), and it says so when the server cannot be asked what it holds
+because it is another version of imux.
+Because it works with
+.B SIGTERM
+and not with a message, it also works against a server of any version, also one whose protocol this
+imux does not speak.
+After the server ended, in a terminal the command attaches, like
+.BR imux ;
+with
+.B \-\-detach
+(or without a terminal) it only says that the sessions are saved and that the next
+.B imux
+starts the new server.
+Without a server it says so and succeeds.
+It refuses to run inside a pane, which ends with the server: detach first, and run it from a
+terminal outside imux.
+.TP
 .B imux skill [path]
 Print the agent skill: a short guide, as a
 .B SKILL.md

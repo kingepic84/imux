@@ -6,7 +6,7 @@ use imux::client::{self, Mode};
 use imux::proto::{self, PersistOp};
 use imux::{cli, errcode, input, log, plugins, schema, server};
 
-const USAGE: &str = "usage: imux [new [-s name] | attach [-t name] [-d] [-r] | ls | kill-server |\n\
+const USAGE: &str = "usage: imux [new [-s name] | attach [-t name] [-d] [-r] | ls | kill-server | restart-server [--yes] [--detach] |\n\
     \x20            save [name] | restore [name|history/NAME] | snapshots [--history] | delete-snapshot name |\n\
     \x20            worktree list [repo] | worktree [--detach|--branch] [--start text] [--setup text|--no-setup] [--slug text] [repo] name [base] |\n\
     \x20            worktree-remove [--force] [repo] [name] | list-keys |\n\
@@ -226,6 +226,7 @@ fn run(args: &[String]) -> Result<i32, Failure> {
             client::kill_server()?;
             Ok(0)
         }
+        Some(("restart-server", m)) => Ok(client::restart_server(m.get_flag("yes"), m.get_flag("detach"))?),
         Some(("save", m)) => Ok(client::persist(PersistOp::Save(name_of(m)))?),
         Some(("restore", m)) => Ok(client::persist(PersistOp::Restore(name_of(m)))?),
         Some(("snapshots", m)) if m.get_flag("history") => Ok(client::history_list()?),

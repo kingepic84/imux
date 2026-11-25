@@ -23,7 +23,7 @@ pub fn version() -> u16 {
 /// What a server of version `server` (process `pid`) says to a client of version `client`.
 pub fn mismatch_text(server: u16, client: u16, pid: u32) -> String {
     format!(
-        "this imux speaks protocol {client} but the server speaks {server}: run `imux kill-server` to end it (the sessions end), or `kill {pid}` to save them first (restore-on-start brings them back), then start imux again"
+        "this imux speaks protocol {client} but the server speaks {server}: run `imux kill-server` to end it (the sessions end), or `kill {pid}` to save them first (restore-on-start brings them back), then start imux again; `imux restart-server` does the save, the stop, and the start in one step"
     )
 }
 

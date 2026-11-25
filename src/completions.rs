@@ -15,6 +15,7 @@ const CLI: &[(&str, &[&str])] = &[
     ("attach", &["-t", "-d", "-r"]),
     ("ls", &[]),
     ("kill-server", &[]),
+    ("restart-server", &["-y", "--yes", "-d", "--detach"]),
     ("save", &[]),
     ("restore", &[]),
     ("snapshots", &["--history"]),

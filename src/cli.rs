@@ -573,6 +573,12 @@ pub fn tree() -> Command {
         .subcommand(attach_command())
         .subcommand(Command::new("ls").about("list the sessions"))
         .subcommand(Command::new("kill-server").about("end the server and every program in it"))
+        .subcommand(
+            Command::new("restart-server")
+                .about("stop the server saving its sessions, and start this imux, which brings them back (asks first)")
+                .arg(Arg::new("yes").short('y').long("yes").action(ArgAction::SetTrue).help("do not ask"))
+                .arg(Arg::new("detach").short('d').long("detach").action(ArgAction::SetTrue).help("do not attach afterwards")),
+        )
         .subcommand(Command::new("save").about("save the sessions as a named snapshot").arg(Arg::new("name").value_name("name")))
         .subcommand(Command::new("restore").about("bring back a snapshot (history/NAME for a rolling copy)").arg(Arg::new("name").value_name("name")))
         .subcommand(

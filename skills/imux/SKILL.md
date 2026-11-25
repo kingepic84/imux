@@ -22,7 +22,8 @@ imux events --help
 ```
 
 Never run bare `imux`, `imux new` or `imux attach`: they attach a terminal. Never run
-`imux kill-server`. Do not probe a command by leaving its arguments out; read its `--help`.
+`imux kill-server` or `imux restart-server`: they end every program in the server. Do not probe a
+command by leaving its arguments out; read its `--help`.
 
 ## Names and ids
 

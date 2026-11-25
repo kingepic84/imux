@@ -2,6 +2,7 @@ mod checkconfig;
 mod doctor;
 pub mod eventwait;
 mod probe;
+mod restart;
 pub mod tmux;
 
 use std::fs::{File, OpenOptions};
@@ -122,6 +123,8 @@ fn connect_raw(mode: Mode) -> io::Result<UnixStream> {
     }
     Err(io::Error::new(io::ErrorKind::TimedOut, format!("server did not come up (see {} in the socket dir)", paths::log_file_name())))
 }
+
+pub use restart::restart_server;
 
 pub fn kill_server() -> io::Result<()> {
     let mut stream = connect_raw(Mode::Attach)?;
